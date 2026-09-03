@@ -1,0 +1,19 @@
+# Binaries & build output
+*.exe
+*.exe~
+*.dll
+bin/
+dist/
+
+# Logs
+*.log
+logs/
+
+# Local runtime state
+engine_prefs.json
+*.cap.jsonl
+scenario.trace.jsonl
+
+# OS / editor noise
+Thumbs.db
+.DS_Store

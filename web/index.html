@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trade Engine Command Center</title>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <!-- Emergency Kill Switch Banner -->
+  <div id="killSwitchBanner" style="display: none; background: #ff4757; color: white; text-align: center; font-size: 12px; font-weight: 700; padding: 4px 12px; z-index: 10000;">
+    🚨 KILL SWITCH ACTIVE — Trading Disabled. All orders cancelled.
+    <button onclick="rearmKillSwitch()" style="margin-left: 12px; background: #131722; color: #fff; border: 1px solid #fff; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">RE-ENABLE TRADING</button>
+  </div>
+
+  <!-- Unified Skinny Top Bar -->
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <span class="brand-text">⚡ TE2</span>
+      <span id="instDisplay" class="top-inst">NQ (0.25)</span>
+      <span id="chartLivePrice" class="top-live-price">---</span>
+
+      <div class="top-divider"></div>
+
+      <!-- Tools -->
+      <div style="display: inline-flex; gap: 4px; align-items: center;">
+        <button class="chart-tool-btn" onclick="toggleHotkeysPanel()" title="Show hotkey reference">⌨ HOTKEYS</button>
+        <button class="chart-tool-btn" id="btnHotkeysArm" onclick="toggleHotkeysArmed()" title="Toggle Execution Hotkeys (Instant/Breakout)">🛡️ ARMED</button>
+        <button class="chart-tool-btn" id="btnKillSwitch" onclick="triggerKillSwitch()" title="Emergency Kill Switch" style="color: #ff4757; border-color: rgba(255, 71, 87, 0.4);">🚨 KILL</button>
+      </div>
+    </div>
+
+    <div class="top-bar-right">
+      <div id="protectionAlertBadge" class="badge badge-red" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">⚠️ NO STOP LOSS</div>
+      <div id="commandStateBadge" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">PENDING</div>
+      <div id="posBadge" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">FLAT</div>
+      <div style="display: flex; align-items: center; gap: 4px;">
+        <label for="accSelect" style="font-size: 10px; color: var(--text-muted); font-weight: 700;">ACC:</label>
+        <select id="accSelect" class="input-field" style="padding: 1px 6px; font-family: var(--font-mono); font-weight: 700; font-size: 11px; color: var(--accent-green); background: rgba(0, 210, 140, 0.1); border: 1px solid rgba(0, 210, 140, 0.3); border-radius: 4px; cursor: pointer;" onchange="onAccountChanged(this.value)">
+          <option value="Playback101">Playback101</option>
+        </select>
+        <div id="accDisplay" class="badge" style="background: rgba(0, 210, 140, 0.15); color: var(--accent-green); font-family: var(--font-mono); font-size: 11px; padding: 2px 6px;">$100,000</div>
+      </div>
+      <div class="status-pill" style="padding: 2px 8px; font-size: 10px;">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="statusText">CONNECTING...</span>
+      </div>
+    </div>
+  </header>
+  <!-- Main Container: Command Center (no charts — lines live on the NT8 chart) -->
+  <main class="main-container">
+
+    <!-- Unified Trade Command Center -->
+    <div class="hud-col">
+      
+      <!-- 1. Direction & Order Type -->
+      <div class="panel" style="margin-bottom: 10px;">
+        <div class="btn-group" style="margin-bottom: 6px;">
+          <button id="btnLong" class="btn active-long" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(true)">▲ LONG (BUY)</button>
+          <button id="btnShort" class="btn" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(false)">▼ SHORT (SELL)</button>
+        </div>
+        <div id="autoOrderTypeBadge" style="padding: 5px 10px; background: rgba(0, 192, 118, 0.1); border: 1px solid rgba(0, 192, 118, 0.4); border-radius: 4px; font-size: 11px; font-weight: 700; color: #00c076; text-align: center; font-family: monospace; letter-spacing: 0.5px;">
+          AUTO: LIMIT (PULLBACK)
+        </div>
+      </div>
+
+      <!-- 2. Fast Execution Actions -->
+      <div style="margin-bottom: 10px;">
+        <button id="btnExecute" class="btn-execute long" style="margin-top: 0; padding: 13px; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;" onclick="executeTrade()">
+          EXECUTE LONG LIMIT (1)
+        </button>
+
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button class="btn-cancel" style="flex: 1; margin-top: 0; padding: 8px; font-weight: 700;" onclick="cancelOrders()">
+            ✕ CANCEL ORDERS
+          </button>
+          <button class="btn-cancel" style="flex: 1; margin-top: 0; padding: 8px; font-weight: 700; background: rgba(255, 60, 90, 0.15); color: var(--accent-red); border: 1px solid var(--accent-red);" onclick="flattenPosition()">
+            ⚡ FLATTEN & CLOSE
+          </button>
+        </div>
+        <button class="btn" style="margin-top: 6px; width: 100%; padding: 8px; font-weight: 700; background: rgba(0, 192, 118, 0.1); color: var(--accent-green); border: 1px solid rgba(0, 192, 118, 0.4);" onclick="splitTargetTp()" title="Split the working Take Profit in half — half stays here, half moves one R further out">
+          ✂ SPLIT TAKE PROFIT
+        </button>
+      </div>
+
+      <!-- 3. Primary HUD Card -->
+      <div class="hud-card" style="margin-bottom: 10px;">
+        <div class="hud-qty-row">
+          <span class="hud-qty-label">POSITION SIZE</span>
+          <span id="hudQty" class="hud-qty-val">1 CON</span>
+        </div>
+
+        <div class="hud-metrics-grid">
+          <div class="hud-metric-box">
+            <div class="hud-metric-label">Actual Risk</div>
+            <div id="hudRisk" class="hud-metric-value" style="color: var(--accent-red);">$100.00</div>
+          </div>
+          <div class="hud-metric-box">
+            <div class="hud-metric-label">Actual Reward</div>
+            <div id="hudReward" class="hud-metric-value" style="color: var(--accent-green);">$200.00</div>
+          </div>
+          <div class="hud-metric-box">
+            <div class="hud-metric-label">R:R Ratio</div>
+            <div id="hudRR" class="hud-metric-value">1 : 2.00</div>
+          </div>
+          <div class="hud-metric-box">
+            <div class="hud-metric-label">Account Buffer</div>
+            <div id="hudBuffer" class="hud-metric-value">$0.00</div>
+          </div>
+        </div>
+
+        <!-- Live Open Position Feed (Direct from NinjaTrader 8) -->
+        <div id="livePositionCard" style="margin-top: 10px; padding: 10px; border-radius: 6px; background: rgba(22, 25, 34, 0.8); border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span id="livePosDot" style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);"></span>
+              <span style="font-size: 10px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">NT8 Live Position</span>
+            </div>
+            <span id="livePosBadge" style="font-size: 10px; font-weight: 800; font-family: var(--font-mono); padding: 2px 7px; border-radius: 4px; background: rgba(98, 107, 130, 0.2); color: var(--text-muted);">FLAT</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 6px; font-family: var(--font-mono); text-align: center;">
+            <div style="background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
+              <div style="font-size: 8px; color: var(--text-muted); margin-bottom: 2px;">AVG ENTRY</div>
+              <div id="livePosAvgPrice" style="font-size: 11px; font-weight: 700; color: var(--text-primary);">---</div>
+            </div>
+            <div style="background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
+              <div style="font-size: 8px; color: var(--text-muted); margin-bottom: 2px;">CONTRACTS</div>
+              <div id="livePosQty" style="font-size: 11px; font-weight: 700; color: var(--text-primary);">0</div>
+            </div>
+            <div style="background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
+              <div style="font-size: 8px; color: var(--text-muted); margin-bottom: 2px;">UNREALIZED</div>
+              <div id="livePosPnL" style="font-size: 11px; font-weight: 700; color: var(--text-muted);">$0.00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Quick Risk & Targets (Main Bar) -->
+      <div class="panel" style="margin-bottom: 10px;">
+        <!-- Target R:R Presets (Max 1:2) -->
+        <div class="panel-title" style="margin-bottom: 6px;">Target R:R Presets</div>
+        <div class="btn-group" style="margin-bottom: 8px;">
+          <button id="btnRR1" class="btn btn-preset" onclick="setRR(1.0)">1:1</button>
+          <button id="btnRR15" class="btn btn-preset" onclick="setRR(1.5)">1:1.5</button>
+          <button id="btnRR2" class="btn btn-preset active" onclick="setRR(2.0)">1:2</button>
+        </div>
+
+        <!-- Risk Cash Presets -->
+        <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span>Risk & Sizing Presets</span>
+          <span id="dynStateBadge" style="color: var(--accent-green); font-size: 10px;">MANUAL</span>
+        </div>
+        <div class="btn-group" style="margin-bottom: 6px;">
+          <button class="btn btn-preset" data-risktoggle="a" data-value="100" onclick="setRiskCash(100)">$100</button>
+          <button class="btn btn-preset" data-risktoggle="b" data-value="200" onclick="setRiskCash(200)">$200</button>
+          <button class="btn btn-preset" onclick="setRiskCash(300)">$300</button>
+          <button class="btn btn-preset" onclick="setRiskCash(400)">$400</button>
+        </div>
+
+        <!-- Custom Risk Cash & Max Qty Inputs -->
+        <div class="input-row" style="margin-bottom: 6px;">
+          <label class="input-label" style="font-size: 11px;">Risk ($):</label>
+          <input type="number" id="inputRiskCash" class="input-field" value="100" step="25" style="width: 75px; padding: 3px 6px;" onchange="onRiskCashChanged(this.value)">
+          
+          <label class="input-label" style="width: auto; margin-left: 8px; font-size: 11px;">Max Qty:</label>
+          <select id="maxContractsSelect" class="input-field" style="width: 65px; padding: 3px 6px;" onchange="onMaxContractsChanged(this.value)">
+            <option value="1">1</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 5. Live Tracking & Stop Guards (Main Bar) -->
+      <div class="panel" style="margin-bottom: 10px;">
+        <div class="panel-title" style="margin-bottom: 6px;">Tracking & Stop Guards</div>
+        
+        <!-- Auto-Track and Lock SL in Main Bar -->
+        <div class="btn-group" style="margin-bottom: 6px;">
+          <button id="btnAutoTrack" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleAutoTrack()">🎯 Auto-Track: OFF</button>
+          <button id="btnLockSl" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleLockSl()">🔓 Lock SL: OFF</button>
+        </div>
+
+        <!-- Tracking Timeframe: which bar series AutoTrack anchors on
+             (regardless of which timeframe the chart panes display) -->
+        <div class="input-row" style="margin-bottom: 6px;">
+          <label class="input-label" style="font-size: 11px;">Track TF:</label>
+          <select id="trackTfSelect" class="input-field" style="font-size: 11px; padding: 3px 6px;" onchange="onTrackTfChanged(this.value)">
+            <option value="15s">15s</option>
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="100t">100t</option>
+          </select>
+          <span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">anchor series for Auto-Track</span>
+        </div>
+
+        <!-- Anchor & Offset in Main Bar -->
+        <div class="input-row" style="margin-bottom: 6px;">
+          <label class="input-label" style="font-size: 11px;">Anchor:</label>
+          <select id="trackAnchorSelect" class="input-field" style="font-size: 11px; padding: 3px 6px;" onchange="onTrackAnchorChanged(this.value)">
+            <option value="PriorHighLow">Prior Bar H/L</option>
+            <option value="CurrentBarHighLow">Current Bar H/L</option>
+          </select>
+
+          <label class="input-label" style="width: auto; margin-left: 8px; font-size: 11px;">Offset:</label>
+          <input type="number" id="trackOffsetInput" class="input-field" style="width: 55px; font-size: 11px; padding: 3px 6px;" value="0" step="1" onchange="onTrackOffsetChanged(this.value)">
+        </div>
+
+        <!-- Quick Toggles -->
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button id="btnPartial" class="btn" style="flex: 1; font-size: 11px; padding: 5px;" onclick="togglePartial()">⚖️ Partial: OFF</button>
+          <button id="btnShowLines" class="btn active" style="flex: 1; font-size: 11px; padding: 5px;" onclick="toggleShowLines()">👁️ Lines: ON</button>
+          <button class="btn" style="font-size: 11px; padding: 5px 8px;" onclick="openEngineSettingsModal()" title="Full Engine Settings">⚙️</button>
+        </div>
+      </div>
+
+      <!-- 6. Collapsible Advanced / Slippage Matrix Accordion -->
+      <div class="panel" style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" onclick="toggleAdvancedPanel()">
+          <span style="font-weight: 700; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Advanced Risk & Slippage</span>
+          <span id="advToggleIcon" style="font-size: 10px; color: var(--text-muted);">▼</span>
+        </div>
+
+        <div id="advPanelContent" style="display: none; margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+          <!-- Dynamic Risk & SL Pad -->
+          <div class="btn-group" style="margin-bottom: 6px;">
+            <button id="btnDynRisk" class="btn" style="font-size: 10px; padding: 4px;" onclick="toggleDynRisk()">🛡️ Dyn Risk: OFF</button>
+          </div>
+
+          <div class="input-row" style="margin-bottom: 8px;">
+            <label class="input-label" style="font-size: 10px; width: 60px;">SL Pad:</label>
+            <input type="number" id="quickSlPad" class="input-field" style="padding: 2px 4px; font-size: 10px;" value="0.0" step="0.5" min="0" max="20" onchange="onQuickSlPadChanged(this.value)">
+          </div>
+
+          <!-- Slippage Matrix -->
+          <div class="slippage-matrix" style="margin-top: 6px;">
+            <div class="slippage-row" style="font-size: 10px;"><span>0 Ticks:</span><span id="slip0" class="val">$100.00</span></div>
+            <div class="slippage-row" style="font-size: 10px;"><span>4 Ticks:</span><span id="slip4" class="val">$120.00</span></div>
+            <div class="slippage-row" style="font-size: 10px;"><span>8 Ticks:</span><span id="slip8" class="val">$140.00</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- TradingView Standard Chart Settings Modal -->
+  <div id="chartSettingsModal" class="modal-overlay" style="display: none;">
+    <div class="tv-settings-modal">
+      <!-- Header -->
+      <div class="tv-settings-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px;">⚙️</span>
+          <span style="font-weight: 700; font-size: 14px; color: #fff; letter-spacing: 0.5px;">Chart Settings</span>
+        </div>
+        <button onclick="closeChartSettingsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+
+      <!-- Body: Left Tabs & Right Content -->
+      <div class="tv-settings-body">
+        <!-- Sidebar Navigation Tabs -->
+        <div class="tv-settings-tabs">
+          <button id="tvTabBtnEngine" class="tv-tab-btn active" onclick="switchSettingsTab('engine')">
+            <span>⚙️</span> Engine & Risk
+          </button>
+        </div>
+
+        <!-- Content Panels -->
+        <div class="tv-settings-content">
+          
+          <!-- Engine & Risk configuration (only tab � no charts) -->
+          <div id="tvTabContentEngine" style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px;">Slippage & Stop Padding</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label" title="Extra ticks added to stop distance for conservative position sizing">Stop Slippage Padding (Ticks):</span>
+              <input type="number" id="settingSlippagePad" class="input-field" style="width: 90px;" min="0" max="20" step="0.5" value="0.0" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label" title="Max ticks allowed for breakout orders">Slippage Cap (Ticks):</span>
+              <input type="number" id="settingSlippageCap" class="input-field" style="width: 90px;" min="0" max="20" step="0.5" value="0.0" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Dynamic Slippage Sync:</span>
+              <input type="checkbox" id="settingSlippageSync" onchange="applyEngineSettings()">
+            </div>
+
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px; margin-top: 10px;">Partial Profit Scale-Out</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">1st Target Exit Ratio (%):</span>
+              <input type="number" id="settingFirstExitFraction" class="input-field" style="width: 90px;" min="5" max="100" step="1" value="33" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Subsequent Exit Ratio (%):</span>
+              <input type="number" id="settingSubsequentExitFraction" class="input-field" style="width: 90px;" min="5" max="100" step="1" value="50" onchange="applyEngineSettings()">
+            </div>
+
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px; margin-top: 10px;">Dynamic Risk Parameters</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Minimum Loss Limit (MLL $):</span>
+              <input type="number" id="settingMLL" class="input-field" style="width: 100px;" step="100" value="50000" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Survival Penalty Threshold ($):</span>
+              <input type="number" id="settingPenaltyThreshold" class="input-field" style="width: 100px;" step="100" value="1000" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Survival Penalty Risk ($):</span>
+              <input type="number" id="settingPenaltyRisk" class="input-field" style="width: 100px;" step="25" value="100" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Base Growth Risk ($):</span>
+              <input type="number" id="settingBaseRisk" class="input-field" style="width: 100px;" step="25" value="200" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Growth Scaling Factor:</span>
+              <input type="number" id="settingScaleFactor" class="input-field" style="width: 90px;" step="0.05" min="0.05" max="1.0" value="0.25" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Max Risk Cap ($):</span>
+              <input type="number" id="settingMaxCap" class="input-field" style="width: 100px;" step="50" value="400" onchange="applyEngineSettings()">
+            </div>
+
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px; margin-top: 10px;">Order Locks & Metrics</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label" title="Keep Stop Loss price fixed when dragging entry price">Lock Stop Loss Line:</span>
+              <input type="checkbox" id="settingLockSl" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label" title="Keep Take Profit price fixed when dragging entry price">Lock Take Profit Line:</span>
+              <input type="checkbox" id="settingLockTp" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Show Profit In Ticks:</span>
+              <input type="checkbox" id="settingShowProfitInTicks" onchange="applyEngineSettings()">
+            </div>
+
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px; margin-top: 10px;">Execution & Risk Controls</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Commission ($/contract):</span>
+              <input type="number" id="settingCommissionPerContract" class="input-field" style="width: 70px;" step="0.25" min="0" value="0.00" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Max Entry Slippage (Ticks):</span>
+              <input type="number" id="settingMaxEntrySlippageTicks" class="input-field" style="width: 70px;" step="1" min="0" value="4" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Breakout Expiry (Seconds, 0=None):</span>
+              <input type="number" id="settingBreakoutExpirySeconds" class="input-field" style="width: 70px;" step="1" min="0" value="0" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Auto-Breakeven on TP1 Fill:</span>
+              <input type="checkbox" id="settingAutoBEOnTP1" checked onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Auto-BE Offset (Ticks):</span>
+              <input type="number" id="settingAutoBEOffsetTicks" class="input-field" style="width: 70px;" step="1" min="0" value="1" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Arm Execution Hotkeys:</span>
+              <input type="checkbox" id="settingHotkeysArmed" checked onchange="applyEngineSettings()">
+            </div>
+
+            <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px; margin-top: 10px;">Hotkeys</div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Enable Hotkeys:</span>
+              <input type="checkbox" id="settingEnableHotkeys" checked onchange="applyEngineSettings()">
+            </div>
+            <div style="font-size: 11px; color: #9aa2b5; margin-top: -6px; margin-bottom: 4px;">Click a key below, then press the new key combo to rebind it (or Backspace to clear).</div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Instant Entry:</span><button type="button" class="btn hotkey-capture" data-action="INSTANT_ENTRY" onclick="captureHotkey(this)">Shift+F</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Breakout Entry:</span><button type="button" class="btn hotkey-capture" data-action="BREAKOUT_ENTRY" onclick="captureHotkey(this)">Shift+R</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Trail Stop:</span><button type="button" class="btn hotkey-capture" data-action="TRAIL_STOP" onclick="captureHotkey(this)">Shift+S</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Stop to Breakeven:</span><button type="button" class="btn hotkey-capture" data-action="BREAKEVEN" onclick="captureHotkey(this)">B</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Stop to BE + Offset:</span><button type="button" class="btn hotkey-capture" data-action="BREAKEVEN_PLUS" onclick="captureHotkey(this)">Shift+B</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Close 25%:</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_25" onclick="captureHotkey(this)">Ctrl+1</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Close 50%:</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_50" onclick="captureHotkey(this)">Ctrl+2</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Close Runner (100%):</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_RUNNER" onclick="captureHotkey(this)">Ctrl+3</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Cancel Entry Order:</span><button type="button" class="btn hotkey-capture" data-action="CANCEL_ENTRY" onclick="captureHotkey(this)">C</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Cancel All Orders:</span><button type="button" class="btn hotkey-capture" data-action="CANCEL_ORDERS" onclick="captureHotkey(this)">Shift+C</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Swap Long/Short:</span><button type="button" class="btn hotkey-capture" data-action="SWAP_DIRECTION" onclick="captureHotkey(this)">S</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Scale Out:</span><button type="button" class="btn hotkey-capture" data-action="SCALE_OUT" onclick="captureHotkey(this)">Ctrl+F</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Flatten:</span><button type="button" class="btn hotkey-capture" data-action="FLATTEN" onclick="captureHotkey(this)">Ctrl+Space</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Emergency Kill Switch:</span><button type="button" class="btn hotkey-capture" data-action="KILL_SWITCH" onclick="captureHotkey(this)">Ctrl+Shift+K</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Set RR 1:1:</span><button type="button" class="btn hotkey-capture" data-action="SET_RR_1" onclick="captureHotkey(this)">R</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Toggle Risk Cash:</span><button type="button" class="btn hotkey-capture" data-action="TOGGLE_RISK" onclick="captureHotkey(this)">Q</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Auto-Track On/Off:</span><button type="button" class="btn hotkey-capture" data-action="AUTO_TRACK" onclick="captureHotkey(this)">A</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Cycle Track Timeframe:</span><button type="button" class="btn hotkey-capture" data-action="CYCLE_TRACK_TF" onclick="captureHotkey(this)">T</button></div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label"></span>
+              <button type="button" class="btn" onclick="resetHotkeyBindings()">Reset to defaults</button>
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Instant Entry Offset (Ticks):</span>
+              <input type="number" id="settingInstantEntryOffsetTicks" class="input-field" style="width: 70px;" step="1" min="0" value="2" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Breakout Entry Offset (Ticks):</span>
+              <input type="number" id="settingBreakoutEntryOffsetTicks" class="input-field" style="width: 70px;" step="1" min="0" value="1" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Trail Stop Offset (Ticks):</span>
+              <input type="number" id="settingTrailStopOffsetTicks" class="input-field" style="width: 70px;" step="1" min="0" value="1" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Scale Out Percent:</span>
+              <input type="number" id="settingScaleOutPercent" class="input-field" style="width: 70px;" step="5" min="5" max="100" value="50" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Scale Out Timeout (Seconds):</span>
+              <input type="number" id="settingScaleOutTimeoutSeconds" class="input-field" style="width: 70px;" step="0.5" min="0.5" value="3" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Scale Out Price Mode:</span>
+              <select id="settingScaleOutPriceMode" class="input-field" style="width: 120px;" onchange="applyEngineSettings()">
+                <option value="BarHighLow">Bar High/Low</option>
+                <option value="AskBid">Live Ask/Bid</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="tv-settings-footer">
+        <button class="btn" style="padding: 6px 14px; font-size: 11px;" onclick="resetDefaultChartSettings()">TEMPLATE: DEFAULTS</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn" style="padding: 6px 14px; font-size: 11px;" onclick="closeChartSettingsModal()">CANCEL</button>
+          <button class="btn active-long" style="padding: 6px 18px; font-size: 11px;" onclick="applyEngineSettings(); closeChartSettingsModal()">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hotkey Reference Panel -->
+  <div id="hotkeysPanel" style="display: none; position: fixed; top: 70px; right: 16px; z-index: 9998; background: rgba(20, 24, 34, 0.96); border: 1px solid #2b3042; border-radius: 8px; padding: 14px 16px; font-size: 12px; color: #c7cdd9; box-shadow: 0 8px 30px rgba(0,0,0,0.5);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-weight: 700; color: #ffd166;">⌨ HOTKEYS</span>
+      <button onclick="toggleHotkeysPanel()" style="background: none; border: none; color: #9aa2b5; cursor: pointer; font-size: 14px;">✕</button>
+    </div>
+    <table style="border-collapse: collapse;">
+      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+F</td><td>Instant entry (marketable limit)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+R</td><td>Breakout entry (trigger stop)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Shift+S</td><td>Trail stop (tighten to swing)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">B</td><td>Stop to Breakeven (entry price)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+B</td><td>Stop to BE + Offset</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+1</td><td>Close 25% of position</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+2</td><td>Close 50% of position</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+3</td><td>Close Runner (100% flat)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">C</td><td>Cancel Working Entry Order</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">Shift+C</td><td>Cancel All Orders</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">S</td><td>Swap Long / Short</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+F</td><td>Scale Out</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">Ctrl+Space</td><td>Flatten Position</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff4757; font-weight: 700;">Ctrl+Shift+K</td><td>🚨 Emergency Kill Switch</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">Q</td><td>Toggle risk cash ($100 ↔ $200)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">R</td><td>Set R:R to 1:1</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">A</td><td>Auto-Track on/off</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">T</td><td>Cycle Track Timeframe (15s→1m→5m→100t)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">L</td><td>Lock Stop Loss on/off</td></tr>
+    </table>
+  </div>
+
+  <script type="module" src="app.js?v=113"></script>
+  <script>
+    function toggleHotkeysPanel() {
+      const p = document.getElementById('hotkeysPanel');
+      if (p) p.style.display = (p.style.display === 'none') ? 'block' : 'none';
+    }
+    function toggleAdvancedPanel() {
+      const content = document.getElementById('advPanelContent');
+      const icon = document.getElementById('advToggleIcon');
+      if (!content) return;
+      const isHidden = content.style.display === 'none';
+      content.style.display = isHidden ? 'block' : 'none';
+      if (icon) icon.innerText = isHidden ? '▲' : '▼';
+    }
+  </script>
+</body>
+</html>
