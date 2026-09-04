@@ -7,25 +7,38 @@
 // trading logic: no sizing, no RR math, no order submission, no bracket logic.
 //
 // Data flow:
-//   - The user drags a line -> NT8 updates the drawing object -> OnChartObjectModified
-//     fires -> we send UPDATE_PRICES {entryPrice, stopPrice, targetPrice} to the
-//     Go engine over WebSocket (same message the web control panel sends).
-//   - The Go engine (authoritative for ALL logic) replies/broadcasts SYNC_STATE;
-//     this indicator re-positions the lines to match engine truth so the chart
-//     always shows the authoritative state (e.g. after a fill or a web-panel edit).
+//   - The user drags a line -> ChartAnchor.Price updates live -> a background
+//     poll loop (250 ms) detects the change and sends UPDATE_PRICES
+//     {entryPrice, stopPrice, targetPrice} to the Go engine over WebSocket
+//     (same message the web control panel sends).
+//   - The Go engine (authoritative for ALL logic) broadcasts SYNC_STATE; this
+//     indicator re-positions the lines to match engine truth so the chart
+//     always shows the authoritative state (e.g. after a fill or a web-panel
+//     edit).
 //
 // Safety: this indicator never calls SendOrder()/Submit(); it cannot execute
 // trades even by accident. All execution happens in the Go engine via the
 // separate gateway strategy.
+//
+// Note: written to compile with the classic NinjaTrader 8 Roslyn compiler
+// (C# 7.x / .NET Framework): no string interpolation, no ??.=, no out var,
+// no discards, and no System.Text.Json (parse via JavaScriptSerializer, the
+// same approach the gateway strategy uses).
 #region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using System.Web.Script.Serialization;
+using NinjaTrader.Cbi;
+using NinjaTrader.Core;
+using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.NinjaScript;
@@ -42,20 +55,24 @@ namespace NinjaTrader.NinjaScript.Indicators
         private readonly Queue<string> outboundQueue = new Queue<string>();
         private readonly SemaphoreSlim queueSignal = new SemaphoreSlim(0);
         private bool isWsConnected;
-        private long lastSendTimeTicks;
+        private long lastSendUnix;
+        private const int SendDebounceMs = 300;
+        private bool pollLoopStarted;
 
         // ---- Drawn lines (held references) ----
-        private Line entryLine;
-        private Line stopLine;
-        private Line targetLine;
-        private bool linesCreated;
+        private NinjaTrader.NinjaScript.DrawingTools.Line entryLine;
+        private NinjaTrader.NinjaScript.DrawingTools.Line stopLine;
+        private NinjaTrader.NinjaScript.DrawingTools.Line targetLine;
 
         // ---- Engine state mirrored onto the lines ----
         private double currentEntry;
         private double currentStop;
         private double currentTarget;
         private bool isInPosition;
-        private bool suppressDragPush;
+        private volatile bool suppressDragPush;
+        private double lastPushedEntry;
+        private double lastPushedStop;
+        private double lastPushedTarget;
 
         private string webSocketUrl = "ws://localhost:8080/ws?type=LINEHOST";
 
@@ -83,6 +100,11 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 EnsureLines(CurrentBar);
                 StartWebSocket();
+                if (!pollLoopStarted)
+                {
+                    pollLoopStarted = true;
+                    PreparePollLoop();
+                }
             }
             else if (State == State.Terminated)
             {
@@ -97,11 +119,18 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
+        // Start the drag-poll loop on a background task (kept separate from
+        // OnStateChange so the async worker cannot block NT8's UI thread).
+        private void PreparePollLoop()
+        {
+            CancellationTokenSource cts = wsCts;
+            Task.Run(() => DragPollLoopAsync(cts != null ? cts.Token : CancellationToken.None));
+        }
+
         protected override void OnBarUpdate()
         {
             if (State != State.Realtime) return;
             // Keep lines attached to the latest bar as the chart advances.
-            // Anchor prices are untouched when the engine state matches.
             EnsureLines(CurrentBar);
         }
 
@@ -128,57 +157,79 @@ namespace NinjaTrader.NinjaScript.Indicators
                 target = basePrice + 20 * TickSize;
             }
 
-            entryLine ??= Draw.Line(this, "LineHost_Entry", idx, entry, idx, entry, Brushes.DodgerBlue);
-            stopLine ??= Draw.Line(this, "LineHost_Stop", idx, stop, idx, stop, Brushes.Crimson);
-            targetLine ??= Draw.Line(this, "LineHost_Target", idx, target, idx, target, Brushes.LimeGreen);
-            linesCreated = entryLine != null && stopLine != null && targetLine != null;
+            if (entryLine == null)
+                entryLine = Draw.Line(this, "LineHost_Entry", idx, entry, idx, entry, Brushes.DodgerBlue);
+            if (stopLine == null)
+                stopLine = Draw.Line(this, "LineHost_Stop", idx, stop, idx, stop, Brushes.Crimson);
+            if (targetLine == null)
+                targetLine = Draw.Line(this, "LineHost_Target", idx, target, idx, target, Brushes.LimeGreen);
 
-            // Reposition to engine truth unless the user is actively dragging
-            // one of these lines (the drag itself will push prices on release).
-            if (suppressDragPush) return;
-            Reposition(entryLine, entry);
-            Reposition(stopLine, stop);
-            Reposition(targetLine, target);
+            if (!suppressDragPush)
+            {
+                Reposition(entryLine, entry);
+                Reposition(stopLine, stop);
+                Reposition(targetLine, target);
+            }
         }
 
-        private static void Reposition(Line ln, double price)
+        private static void Reposition(NinjaTrader.NinjaScript.DrawingTools.Line ln, double price)
         {
-            if (ln == null || ln.StartAnchor == null || ln.EndAnchor == null) return;
-            // Only move when the price actually differs; avoid anchor churn.
+            if (ln == null || ln.StartAnchor == null) return;
             if (Math.Abs(ln.StartAnchor.Price - price) < 0.0001) return;
             ln.StartAnchor.Price = price;
-            ln.EndAnchor.Price = price;
+            if (ln.EndAnchor != null) ln.EndAnchor.Price = price;
         }
 
         // ------------------------------------------------------------------
-        // The 'UI changed' signal: the user dragged one of our lines in NT8.
-        // Push the resulting prices to the Go engine as UPDATE_PRICES.
+        // Drag detection: this NT8 build has no OnChartObjectModified hook, so
+        // we poll the line anchors at 250 ms. ChartAnchor.Price updates live as
+        // the user drags; when any price moved, push UPDATE_PRICES (debounced).
         // ------------------------------------------------------------------
-        protected override void OnChartObjectModified(ChartObject chartObject, ChartObject.ChartObjectModificationType modificationType)
+        private async Task DragPollLoopAsync(CancellationToken ct)
         {
-            if (chartObject == null || !(chartObject is Line)) return;
-            if (chartObject.Tag != "LineHost_Entry" && chartObject.Tag != "LineHost_Stop" && chartObject.Tag != "LineHost_Target") return;
-            if (suppressDragPush) return; // we repositioned from engine state
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(250, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                if (!isWsConnected || suppressDragPush) continue;
+                if (entryLine == null || stopLine == null || targetLine == null) continue;
+                try
+                {
+                    double entry = entryLine.StartAnchor != null ? entryLine.StartAnchor.Price : 0;
+                    double stop = stopLine.StartAnchor != null ? stopLine.StartAnchor.Price : 0;
+                    double target = targetLine.StartAnchor != null ? targetLine.StartAnchor.Price : 0;
+                    if (entry <= 0 || stop <= 0 || target <= 0) continue;
 
-            // Debounce: several modified events fire per drag operation; wait
-            // until the drag settles before pushing a price update.
-            long now = DateTime.UtcNow.Ticks;
-            if (now - lastSendTimeTicks < TimeSpan.TicksPerSecond / 4) return;
-            lastSendTimeTicks = now;
+                    bool moved =
+                        Math.Abs(entry - lastPushedEntry) > 0.0001 ||
+                        Math.Abs(stop - lastPushedStop) > 0.0001 ||
+                        Math.Abs(target - lastPushedTarget) > 0.0001;
+                    if (!moved) continue;
 
-            if (entryLine == null || stopLine == null || targetLine == null) return;
-            double entry = entryLine.StartAnchor?.Price ?? 0;
-            double stop = stopLine.StartAnchor?.Price ?? 0;
-            double target = targetLine.StartAnchor?.Price ?? 0;
-            if (entry <= 0 || stop <= 0 || target <= 0) return;
+                    long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+                    if (now - lastSendUnix < SendDebounceMs) continue;
+                    lastSendUnix = now;
 
-            string payload = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                "{{\"entryPrice\":{0},\"stopPrice\":{1},\"targetPrice\":{2}}}",
-                entry.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
-                stop.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
-                target.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-            SendWs("UPDATE_PRICES", payload);
+                    lastPushedEntry = entry;
+                    lastPushedStop = stop;
+                    lastPushedTarget = target;
+
+                    string payload = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{{\"entryPrice\":{0},\"stopPrice\":{1},\"targetPrice\":{2}}}",
+                        entry.ToString("R", CultureInfo.InvariantCulture),
+                        stop.ToString("R", CultureInfo.InvariantCulture),
+                        target.ToString("R", CultureInfo.InvariantCulture));
+                    SendWs("UPDATE_PRICES", payload);
+                }
+                catch { }
+            }
         }
 
         private double GetCurrentPrice()
@@ -190,29 +241,35 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (!double.IsNaN(c) && c > 0) return c;
             }
             catch { }
-            return Instrument.MarketData.Last;
+            try
+            {
+                MarketDataEventArgs mde = Instrument.MarketData.Last;
+                if (mde != null) return mde.Price;
+            }
+            catch { }
+            return 0;
         }
 
         // ------------------------------------------------------------------
-        // Engine -> lines: reposition anchors to engine's authoritative state.
-        // Suppress the drag-push to avoid a feedback loop.
+        // Engine -> lines: reposition anchors to engine's authoritative state
+        // (SYNC_STATE broadcast). Suppresses the drag-push to avoid a loop.
         // ------------------------------------------------------------------
         private void ApplyEngineState(string payload)
         {
             try
             {
-                var doc = System.Text.Json.JsonDocument.Parse(payload);
-                var root = doc.RootElement;
+                var serializer = new JavaScriptSerializer();
+                Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(payload);
+                if (root == null) return;
 
-                double entry = 0, stop = 0, target = 0;
-                string mp = "Flat";
-                if (root.TryGetProperty("position", out var pos) &&
-                    pos.TryGetProperty("marketPosition", out var m) &&
-                    m.ValueKind == System.Text.Json.JsonValueKind.String)
-                    mp = m.GetString() ?? "Flat";
-                if (root.TryGetProperty("entryPrice", out var ep) && ep.ValueKind == System.Text.Json.JsonValueKind.Number) entry = ep.GetDouble();
-                if (root.TryGetProperty("stopPrice", out var sp) && sp.ValueKind == System.Text.Json.JsonValueKind.Number) stop = sp.GetDouble();
-                if (root.TryGetProperty("targetPrice", out var tp) && tp.ValueKind == System.Text.Json.JsonValueKind.Number) target = tp.GetDouble();
+                Dictionary<string, object> pos = root.ContainsKey("position") ? root["position"] as Dictionary<string, object> : null;
+                string mp = GetField(root, "marketPosition", "Flat");
+                if (pos != null && pos.ContainsKey("marketPosition") && pos["marketPosition"] != null)
+                    mp = pos["marketPosition"].ToString();
+
+                double entry = GetDoubleField(root, "entryPrice", 0);
+                double stop = GetDoubleField(root, "stopPrice", 0);
+                double target = GetDoubleField(root, "targetPrice", 0);
 
                 bool inPos = !string.Equals(mp, "Flat", StringComparison.OrdinalIgnoreCase);
                 if (!inPos || entry <= 0) return; // keep draggable placeholder lines
@@ -242,15 +299,15 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             if (wsClient != null) return;
             wsCts = new CancellationTokenSource();
-            _ = Task.Run(() => ConnectLoopAsync(wsCts.Token));
+            Task.Run(() => ConnectLoopAsync(wsCts.Token));
         }
 
         private void StopWebSocket()
         {
             try
             {
-                wsCts?.Cancel();
-                wsClient?.Dispose();
+                if (wsCts != null) wsCts.Cancel();
+                if (wsClient != null) wsClient.Dispose();
             }
             catch { }
             wsClient = null;
@@ -263,7 +320,8 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 try
                 {
-                    using (var client = new ClientWebSocket())
+                    var client = new ClientWebSocket();
+                    using (client)
                     {
                         await client.ConnectAsync(new Uri(WebSocketUrl), ct).ConfigureAwait(false);
                         wsClient = client;
@@ -295,7 +353,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     if (outboundQueue.Count == 0) continue;
                     msg = outboundQueue.Dequeue();
                 }
-                var bytes = Encoding.UTF8.GetBytes(msg);
+                byte[] bytes = Encoding.UTF8.GetBytes(msg);
                 await wsClient.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
             }
         }
@@ -337,12 +395,13 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             try
             {
-                var doc = System.Text.Json.JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("type", out var t) || t.ValueKind != System.Text.Json.JsonValueKind.String) return;
-                string type = t.GetString();
-                if (type == "SYNC_STATE" && root.TryGetProperty("payload", out var payload))
-                    ApplyEngineState(payload.GetRawText());
+                var serializer = new JavaScriptSerializer();
+                Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(json);
+                if (root == null) return;
+                string type = GetField(root, "type", "");
+                string payload = GetField(root, "payload", "");
+                if (type == "SYNC_STATE" && payload.Length > 0)
+                    ApplyEngineState(payload);
                 // MARKET_DATA, HEARTBEAT etc. intentionally ignored.
             }
             catch { }
@@ -359,6 +418,27 @@ namespace NinjaTrader.NinjaScript.Indicators
                 outboundQueue.Enqueue(msg);
             }
             try { queueSignal.Release(); } catch { }
+        }
+
+        // ---- JSON helpers (window of convenience; same style as the gateway) ----
+        private static string GetField(object obj, string key, string fallback)
+        {
+            var dict = obj as Dictionary<string, object>;
+            if (dict != null && dict.ContainsKey(key) && dict[key] != null)
+                return dict[key].ToString();
+            return fallback;
+        }
+
+        private static double GetDoubleField(object obj, string key, double fallback)
+        {
+            var dict = obj as Dictionary<string, object>;
+            if (dict != null && dict.ContainsKey(key) && dict[key] != null)
+            {
+                double val;
+                if (double.TryParse(dict[key].ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out val))
+                    return val;
+            }
+            return fallback;
         }
     }
 }
