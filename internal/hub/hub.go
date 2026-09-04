@@ -1,4 +1,4 @@
-﻿package hub
+package hub
 
 import (
 	"encoding/json"
@@ -158,6 +158,12 @@ func (h *Hub) Run() {
 				go h.SendStateToClient(client)
 				go h.SendBarsToClient(client, "")
 			}
+			if client.ClientType == "LINEHOST" {
+				// The charterless indicator mirrors engine state onto its
+				// draggable lines: push current state on connect so the lines
+				// appear at the engine's authoritative prices immediately.
+				go h.SendStateToClient(client)
+			}
 
 		case client := <-h.Unregister:
 			h.Mu.Lock()
@@ -214,7 +220,10 @@ func sendToClient(client *Client, bytes []byte) (ok bool) {
 	}
 }
 
-// BroadcastToWeb broadcasts a message only to connected WEB clients.
+// BroadcastToWeb broadcasts a message only to connected state-receiving
+// clients: the web control panel ("WEB") and the charterless chart's line host
+// ("LINEHOST" — the NT8 indicator that mirrors engine state onto draggable
+// lines). Bars are intentionally NOT sent to LINEHOST (lines are chart-bound).
 func (h *Hub) BroadcastToWeb(msgType string, payload json.RawMessage) {
 	msg := risk.WSMessage{
 		Type:    msgType,
@@ -228,10 +237,16 @@ func (h *Hub) BroadcastToWeb(msgType string, payload json.RawMessage) {
 	h.Mu.RLock()
 	defer h.Mu.RUnlock()
 	for client := range h.Clients {
-		if client.ClientType == "WEB" {
+		if isStateReceiver(client) {
 			sendToClient(client, bytes)
 		}
 	}
+}
+
+// isStateReceiver reports whether a client wants engine state broadcasts
+// (SYNC_STATE). The web panel and the charterless line host both do.
+func isStateReceiver(client *Client) bool {
+	return client.ClientType == "WEB" || client.ClientType == "LINEHOST"
 }
 
 // ForwardToNT8 forwards execution commands directly to connected adapter clients.

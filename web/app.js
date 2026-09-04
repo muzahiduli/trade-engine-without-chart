@@ -24,7 +24,7 @@ import {
   onTrackOffsetChanged,
   onAccountChanged,
   openEngineSettingsModal,
-  closeEngineSettingsModal,
+  closeChartSettingsModal,
   switchSettingsTab,
   applyEngineSettings,
   toggleHotkeysArmed,
@@ -75,7 +75,7 @@ window.onTrackTfChanged = onTrackTfChanged;
 window.onTrackOffsetChanged = onTrackOffsetChanged;
 window.onAccountChanged = onAccountChanged;
 window.openEngineSettingsModal = openEngineSettingsModal;
-window.closeEngineSettingsModal = closeEngineSettingsModal;
+window.closeChartSettingsModal = closeChartSettingsModal;
 window.switchSettingsTab = switchSettingsTab;
 window.applyEngineSettings = applyEngineSettings;
 window.toggleHotkeysArmed = toggleHotkeysArmed;
