@@ -229,6 +229,52 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct GUITHREADINFO
+        {
+            public int cbSize;
+            public uint flags;
+            public IntPtr hwndActive;
+            public IntPtr hwndFocus;
+            public IntPtr hwndCapture;
+            public IntPtr hwndMenuOwner;
+            public IntPtr hwndMoveSize;
+            public IntPtr hwndCaret;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        // True when the foreground NT8 window has focus inside a text editor
+        // (Edit/RichEdit/TextBox). While typing into NT8 fields the hotkeys —
+        // especially the plain 'L' toggle — must pass through untouched.
+        private bool IsTypingInNinjaTrader()
+        {
+            try
+            {
+                if (!IsNinjaTraderFocused()) return false;
+                IntPtr fg = GetForegroundWindow();
+                uint tid;
+                GetWindowThreadProcessId(fg, out tid);
+                GUITHREADINFO gi = new GUITHREADINFO();
+                gi.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+                if (!GetGUIThreadInfo(tid, ref gi) || gi.hwndFocus == IntPtr.Zero) return false;
+                var cls = new System.Text.StringBuilder(128);
+                GetClassName(gi.hwndFocus, cls, cls.Capacity);
+                string name = cls.ToString();
+                return name.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       name.IndexOf("RichEdit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       name.IndexOf("TextBox", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0)
@@ -241,9 +287,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                     bool shift = IsKeyDown(0x10);
                     bool alt = IsKeyDown(0x12);
 
-                    // Toggle: plain L (no modifiers) flips forwarding on/off.
+                    // Toggle: plain L (no modifiers) flips forwarding on/off — but ONLY when
+                    // NT8 is focused AND the focus isn't inside a text editor
+                    // (otherwise typing 'L' into an NT8 input would be swallowed).
                     if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
                     {
+                        if (IsTypingInNinjaTrader())
+                            return CallNextHookEx(hookHandle, nCode, wParam, lParam);
                         forwardingEnabled = !forwardingEnabled;
                         Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
                         SendStatus();

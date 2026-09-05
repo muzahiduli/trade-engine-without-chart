@@ -228,10 +228,15 @@ func GetTargetExits(totalQty int, entry, slDist, selectedRR float64, isPartialPr
 	if hasCustom && len(existingExits) == len(exits) && slDist > 0 {
 		for i := range exits {
 			exits[i].Ratio = existingExits[i].Ratio
+			// Preserve the user's exit QUANTITY structure (e.g. 25/50/75) —
+			// tracking/stop-guard re-anchors must never collapse it.
+			if existingExits[i].Qty > 0 {
+				exits[i].Qty = existingExits[i].Qty
+			}
 			if isLong {
-				exits[i].Price = RoundToTickSize(entry + exits[i].Ratio*slDist, tickSize)
+				exits[i].Price = RoundToTickSize(entry+exits[i].Ratio*slDist, tickSize)
 			} else {
-				exits[i].Price = RoundToTickSize(entry - exits[i].Ratio*slDist, tickSize)
+				exits[i].Price = RoundToTickSize(entry-exits[i].Ratio*slDist, tickSize)
 			}
 		}
 	}

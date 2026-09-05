@@ -64,7 +64,7 @@ export function renderUI() {
   if (protBadge) {
     if (state.isUnprotectedPosition) {
       protBadge.style.display = 'inline-block';
-      protBadge.innerText = '?? NO STOP LOSS!';
+      protBadge.innerText = '\u26a0\ufe0f NO STOP LOSS!';
       protBadge.title = state.protectionAlert || 'Position is open with no working stop loss!';
     } else {
       protBadge.style.display = 'none';
@@ -92,7 +92,7 @@ export function renderUI() {
   const btnArm = document.getElementById('btnHotkeysArm');
   if (btnArm) {
     const armed = state.hotkeysArmed !== false;
-    btnArm.innerText = armed ? '??? ARMED' : '?? DISARMED';
+    btnArm.innerText = armed ? '\u{1F6E1}\ufe0f ARMED' : '\u26a0\ufe0f DISARMED';
     btnArm.style.color = armed ? '#00c076' : '#ffd166';
     btnArm.style.borderColor = armed ? 'rgba(0, 192, 118, 0.4)' : 'rgba(255, 209, 102, 0.4)';
   }
@@ -219,7 +219,7 @@ export function renderUI() {
   const btnDyn = document.getElementById('btnDynRisk');
   if (btnDyn) {
     btnDyn.className = state.enableDynRisk ? 'btn active' : 'btn';
-    btnDyn.innerText = `??? Dynamic Risk: ${state.enableDynRisk ? 'ON' : 'OFF'}`;
+    btnDyn.innerText = `\u{1F3CA}? Dynamic Risk: ${state.enableDynRisk ? 'ON' : 'OFF'}`;
   }
   if (dynPanel) {
     dynPanel.style.display = state.enableDynRisk ? 'block' : 'none';
@@ -232,7 +232,7 @@ export function renderUI() {
   const btnLockSl = document.getElementById('btnLockSl');
   if (btnLockSl) {
     btnLockSl.className = state.isSlLocked ? 'btn active' : 'btn';
-    btnLockSl.innerText = state.isSlLocked ? '?? Lock SL: ON' : '?? Lock SL: OFF';
+    btnLockSl.innerText = state.isSlLocked ? '\u{1F513} Lock SL: ON' : '\u{1F513} Lock SL: OFF';
   }
 
   const quickSlPad = document.getElementById('quickSlPad');
@@ -322,7 +322,7 @@ export function renderUI() {
   const btnPartial = document.getElementById('btnPartial');
   if (btnPartial) {
     btnPartial.className = state.isPartialProfit ? 'btn active' : 'btn';
-    btnPartial.innerText = `?? Partial Profit: ${state.isPartialProfit ? 'ON' : 'OFF'}`;
+    btnPartial.innerText = `\u2696\ufe0f Partial Profit: ${state.isPartialProfit ? 'ON' : 'OFF'}`;
   }
 
   const btnLines = document.getElementById('btnShowLines');
@@ -407,7 +407,7 @@ export function toggleLockSl() {
   const btnLockSl = document.getElementById('btnLockSl');
   if (btnLockSl) {
     btnLockSl.className = nextVal ? 'btn active' : 'btn';
-    btnLockSl.innerText = nextVal ? '?? Lock SL: ON' : '?? Lock SL: OFF';
+    btnLockSl.innerText = nextVal ? '\u{1F513} Lock SL: ON' : '\u{1F513} Lock SL: OFF';
   }
   sendConfig({ isSlLocked: nextVal });
 }
@@ -496,7 +496,7 @@ export function toggleHotkeysArmed() {
 }
 
 export function triggerKillSwitch() {
-  if (confirm('?? EMERGENCY KILL SWITCH: Flatten open position, cancel all orders, and disable trading?')) {
+  if (confirm('\u{1F6A8} EMERGENCY KILL SWITCH: Flatten open position, cancel all orders, and disable trading?')) {
     import('./hotkeys.js').then(m => {
       import('./ws.js').then(w => w.sendHotkey('KILL_SWITCH'));
     });

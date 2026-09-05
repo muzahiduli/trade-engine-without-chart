@@ -108,6 +108,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool isDraggingEntry;
         private bool isDraggingStop;
         private bool isDraggingTarget;
+        private bool isTargetDraggedIndependently; // target grabbed directly vs moved-with-entry
         private const double HitTestPixels = 30.0;
         private bool mouseCaptured;
 
@@ -347,6 +348,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (dEntry < HitTestPixels)
             {
                 isDraggingEntry = true;
+                isTargetDraggedIndependently = false;
                 e.Handled = true;
                 ((IInputElement)sender).CaptureMouse();
                 mouseCaptured = true;
@@ -361,6 +363,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             else if (dTarget < HitTestPixels)
             {
                 isDraggingTarget = true;
+                isTargetDraggedIndependently = true;
                 e.Handled = true;
                 ((IInputElement)sender).CaptureMouse();
                 mouseCaptured = true;
@@ -377,7 +380,17 @@ namespace NinjaTrader.NinjaScript.Indicators
             newPrice = RoundToTickSize(newPrice);
             if (newPrice <= 0) return;
 
-            if (isDraggingEntry) entryPrice = newPrice;
+            if (isDraggingEntry)
+            {
+                // Moving the entry line shifts the target by the SAME amount
+                // (entry->target gap is preserved — the plan stays parallel).
+                double delta = newPrice - entryPrice;
+                entryPrice = newPrice;
+                if (targetPrice > 0 && !isTargetDraggedIndependently)
+                {
+                    targetPrice = RoundToTickSize(targetPrice + delta);
+                }
+            }
             else if (isDraggingStop) stopPrice = newPrice;
             else if (isDraggingTarget) targetPrice = newPrice;
 
@@ -392,6 +405,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             isDraggingEntry = false;
             isDraggingStop = false;
             isDraggingTarget = false;
+            isTargetDraggedIndependently = false;
             if (mouseCaptured) ((IInputElement)sender).ReleaseMouseCapture();
             mouseCaptured = false;
             if (wasDragging)
@@ -496,12 +510,14 @@ namespace NinjaTrader.NinjaScript.Indicators
         protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
         {
             base.OnRender(chartControl, chartScale);
-            cachedScale = chartScale;
-            // NOTE: mouse handlers are hooked in State.DataLoaded / Realtime
-            // (UI thread) — never here, OnRender runs on the render thread and
-            // touching WPF UI from it breaks rendering (the "lines vanished" bug).
-            if (RenderTarget == null || chartControl == null || chartScale == null) return;
-            if (entryPrice <= 0 || stopPrice <= 0 || targetPrice <= 0) return;
+            try
+            {
+                cachedScale = chartScale;
+                // NOTE: mouse handlers are hooked in State.DataLoaded / Realtime
+                // (UI thread) — never here, OnRender runs on the render thread and
+                // touching WPF UI from it breaks rendering (the "lines vanished" bug).
+                if (RenderTarget == null || chartControl == null || chartScale == null) return;
+                if (entryPrice <= 0 || stopPrice <= 0 || targetPrice <= 0) return;
 
             double canvasLeft = chartControl.CanvasLeft;
             double canvasRight = chartControl.CanvasRight;
@@ -543,6 +559,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                 string.Format(" STOP ({0} contracts):\n {1:F2} (-{2:F2} pts) (-{3:C2})", PositionQty(), stopPrice, slDist, stopDollars));
             DrawLineLabel(canvasLeft, canvasRight, targetY, targetBrush,
                 string.Format(" TARGET ({0} contracts):\n {1:F2} (+{2:F2} pts) (+{3:C2})", PositionQty(), targetPrice, tpDist, tpDollars));
+            }
+            catch
+            {
+                // A render exception must never remove the indicator from the
+                // chart — swallow it and let the next render repaint.
+            }
         }
 
         // PositionSizeDoc: qty shown on labels. When the engine reports an open
