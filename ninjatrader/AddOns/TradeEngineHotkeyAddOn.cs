@@ -337,18 +337,9 @@ private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
             // hotkeys are for chart focus, not for typing.
             if (IsTypingInNinjaTrader()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
 
-            // Toggle: plain L (no modifiers) flips the engine's ENABLE_HOTKEYS
-            // (single source of truth). The hub updates state, broadcasts
-            // SYNC_STATE, and this AddOn mirrors enableHotkeys -> forwarding —
-            // so the web button, 'L', and the AddOn can never disagree.
-            if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
-            {
-                bool next = !forwardingEnabled;
-                forwardingEnabled = next;
-                Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
-                SendWs("SET_CONFIG", string.Format("{{\"enableHotkeys\":{0}}}", next ? "true" : "false"));
-                return new IntPtr(1); // swallow the toggle key
-            }
+            // NO toggle key: hotkeys on/off is controlled ONLY by the web
+            // button (state.enableHotkeys), gated server-side in the hub.
+            // 'L' is just the Lock-SL action from the user's hotkey set.
 
             if (!forwardingEnabled) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
 
