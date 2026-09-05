@@ -212,22 +212,46 @@ namespace NinjaTrader.NinjaScript.AddOns
             hooked = false;
         }
 
-        // Returns true when the foreground window belongs to NinjaTrader.
+        // Returns true ONLY when the FOREGROUND window is a NinjaTrader CHART window.
+        // Hotkeys fire only on the charts — never while typing in Chrome, other
+        // apps, NT8 dialogs/editors, or even NT8's own non-chart windows. This
+        // is the hard rule that finally stops key-swallowing everywhere else.
+        // Fail-closed: if we can't tell, typing always wins over hotkeys.
         private bool IsNinjaTraderFocused()
         {
             try
             {
                 IntPtr fg = GetForegroundWindow();
-                if (fg == IntPtr.Zero) return true; // no fg — assume our context
+                if (fg == IntPtr.Zero) return false;
                 uint pid;
                 GetWindowThreadProcessId(fg, out pid);
-                return pid == nt8Pid;
+                if (pid != nt8Pid) return false;
+
+                var title = new System.Text.StringBuilder(256);
+                GetWindowText(fg, title, title.Capacity);
+                string t = title.ToString();
+                if (t.IndexOf("Chart", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (t.IndexOf("SuperDOM", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (t.IndexOf("Chart Trader", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+
+                // WPF layer: if a chart control has keyboard focus, it's a chart.
+                try
+                {
+                    var fe = System.Windows.Input.Keyboard.FocusedElement;
+                    if (fe != null && fe is NinjaTrader.Gui.Chart.ChartControl) return true;
+                    if (fe != null && fe.GetType().Name.Contains("Chart")) return true;
+                }
+                catch { }
+                return false;
             }
             catch
             {
-                return true;
+                return false; // fail closed — typing always wins
             }
         }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct GUITHREADINFO
