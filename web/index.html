@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Engine Command Center</title>
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
   <!-- Emergency Kill Switch Banner -->
@@ -24,6 +24,7 @@
 
       <!-- Tools -->
       <div style="display: inline-flex; gap: 4px; align-items: center;">
+        <button class="chart-tool-btn" id="btnLayout" onclick="toggleLayout()" title="Toggle panel layout: vertical side column or horizontal top bar">⇋ LAYOUT</button>
         <button class="chart-tool-btn" onclick="toggleHotkeysPanel()" title="Show hotkey reference">⌨ HOTKEYS</button>
         <button class="chart-tool-btn" id="btnHotkeysArm" onclick="toggleHotkeysArmed()" title="Toggle Execution Hotkeys (Instant/Breakout)">🛡️ ARMED</button>
         <button class="chart-tool-btn" id="btnKillSwitch" onclick="triggerKillSwitch()" title="Emergency Kill Switch" style="color: #ff4757; border-color: rgba(255, 71, 87, 0.4);">🚨 KILL</button>
@@ -463,7 +464,7 @@
     </table>
   </div>
 
-  <script type="module" src="app.js?v=113"></script>
+  <script type="module" src="app.js?v=114"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');

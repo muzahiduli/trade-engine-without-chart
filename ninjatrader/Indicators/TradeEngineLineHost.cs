@@ -2,19 +2,26 @@
 //
 // This NinjaTrader INDICATOR exists for exactly one purpose: host the three
 // horizontal Entry / Stop Loss / Take Profit lines on the chart so the user can
-// drag them around (NinjaTrader handles the dragging natively for lines drawn
-// via Draw.Line — the user's mouse moves the whole line). It contains NO
-// trading logic: no sizing, no RR math, no order submission, no bracket logic.
+// drag them around. It contains NO trading logic: no sizing, no RR math, no
+// order submission, no bracket logic.
+//
+// Dragging is implemented the same way the RiskRewardTool does it (and is the
+// only reliable way in NT8): the lines are drawn ourselves in OnRender with
+// RenderTarget.DrawLine (full chart width), and the chart panel's mouse events
+// are handled ourselves — hit-test within 30px of a line on mouse-down,
+// capture the mouse, convert Y<->price through the cached ChartScale on move,
+// and on release push the three prices to the Go engine as UPDATE_PRICES.
+// (NT8's Draw.Line/HorizontalLine objects are unreliable to drag on charts
+// with other chart objects; custom render + own mouse handlers always work.)
 //
 // Data flow:
-//   - The user drags a line -> ChartAnchor.Price updates live -> a background
-//     poll loop (250 ms) detects the change and sends UPDATE_PRICES
-//     {entryPrice, stopPrice, targetPrice} to the Go engine over WebSocket
-//     (same message the web control panel sends).
+//   - USER drags a line → mouse-move converts Y to price → on release we send
+//     UPDATE_PRICES {entryPrice, stopPrice, targetPrice} to the Go engine over
+//     the WebSocket (same message the web control panel sends).
 //   - The Go engine (authoritative for ALL logic) broadcasts SYNC_STATE; this
 //     indicator re-positions the lines to match engine truth so the chart
-//     always shows the authoritative state (e.g. after a fill or a web-panel
-//     edit).
+//     always shows the authoritative state. While the user is dragging we do
+//     not fight them (engine updates are ignored until the drag ends).
 //
 // Safety: this indicator never calls SendOrder()/Submit(); it cannot execute
 // trades even by accident. All execution happens in the Go engine via the
@@ -34,6 +41,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Web.Script.Serialization;
 using NinjaTrader.Cbi;
@@ -41,9 +50,24 @@ using NinjaTrader.Core;
 using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
+using SharpDX;
+using SharpDX.Direct2D1;
 #endregion
+
+namespace NinjaTrader.NinjaScript
+{
+    // Self-contained label placement enum (mirrors the same enum RiskRewardTool
+    // defines, so no cross-indicator dependency).
+    public enum EngLineLabelPosition
+    {
+        Right,
+        Left,
+        Middle
+    }
+}
 
 namespace NinjaTrader.NinjaScript.Indicators
 {
@@ -56,30 +80,54 @@ namespace NinjaTrader.NinjaScript.Indicators
         private readonly SemaphoreSlim queueSignal = new SemaphoreSlim(0);
         private bool isWsConnected;
         private long lastSendUnix;
-        private const int SendDebounceMs = 300;
-        private bool pollLoopStarted;
+        private const int SendDebounceMs = 250;
 
-        // ---- Drawn lines (held references) ----
-        // HorizontalLine spans the full chart width and is natively draggable
-        // vertically in NT8: the user's drag updates StartAnchor.Price, which
-        // the poll loop reads and pushes as UPDATE_PRICES. (Drawing these as
-        // bars-ago Line objects would anchor them far back in history -- the
-        // reason the lines were invisible on the live chart.)
-        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine entryLine;
-        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine stopLine;
-        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine targetLine;
+        // ---- Line prices (the three draggable levels) ----
+        private double entryPrice;
+        private double stopPrice;
+        private double targetPrice;
+        private bool hasEngineState;      // received SYNC_STATE at least once
+        private bool engineInPosition;
+        private int currentPositionSize = 1; // from SYNC_STATE position qty
 
-        // ---- Engine state mirrored onto the lines ----
-        private double currentEntry;
-        private double currentStop;
-        private double currentTarget;
-        private bool isInPosition;
-        private volatile bool suppressDragPush;
-        private double lastPushedEntry;
-        private double lastPushedStop;
-        private double lastPushedTarget;
+        // ---- Line colors / rendering ----
+        private System.Windows.Media.Brush entryWpfColor = Brushes.DodgerBlue;
+        private System.Windows.Media.Brush stopWpfColor = Brushes.Crimson;
+        private System.Windows.Media.Brush targetWpfColor = Brushes.LimeGreen;
+        private float lineThickness = 2f;
+        private SharpDX.Direct2D1.Brush entryBrush;
+        private SharpDX.Direct2D1.Brush stopBrush;
+        private SharpDX.Direct2D1.Brush targetBrush;
+        private SharpDX.Direct2D1.Brush targetHoverBrush;
+        private SharpDX.Direct2D1.RenderTarget cachedRenderTarget;
+
+        // ---- Drag state (RiskRewardTool pattern) ----
+        private bool subscribedMouse;
+        private bool chartEventsHooked;
+        private ChartScale cachedScale;
+        private bool isDraggingEntry;
+        private bool isDraggingStop;
+        private bool isDraggingTarget;
+        private const double HitTestPixels = 30.0;
+        private bool mouseCaptured;
 
         private string webSocketUrl = "ws://localhost:8080/ws?type=LINEHOST";
+
+        // ---- Label rendering (RiskRewardTool style boxes on each line) ----
+        private SharpDX.DirectWrite.TextFormat textFormat = null;
+        private SharpDX.Direct2D1.SolidColorBrush labelBgBrush = null;
+        private SharpDX.Direct2D1.SolidColorBrush textBrush = null;
+        private const float LabelWidth = 240f;
+        private const float LabelHeight = 38f;
+        private NinjaTrader.NinjaScript.EngLineLabelPosition labelPosition = NinjaTrader.NinjaScript.EngLineLabelPosition.Right;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Label Position", Order = 5, GroupName = "Lines")]
+        public NinjaTrader.NinjaScript.EngLineLabelPosition LabelPosition
+        {
+            get { return labelPosition; }
+            set { labelPosition = value; }
+        }
 
         [NinjaScriptProperty]
         [Display(Name = "WebSocket URL", Order = 1, GroupName = "Engine Connection")]
@@ -87,6 +135,30 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             get { return webSocketUrl; }
             set { webSocketUrl = value; }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Entry Line Color", Order = 2, GroupName = "Lines")]
+        public System.Windows.Media.Brush EntryColor
+        {
+            get { return entryWpfColor; }
+            set { entryWpfColor = value; }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop Line Color", Order = 3, GroupName = "Lines")]
+        public System.Windows.Media.Brush StopColor
+        {
+            get { return stopWpfColor; }
+            set { stopWpfColor = value; }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Target Line Color", Order = 4, GroupName = "Lines")]
+        public System.Windows.Media.Brush TargetColor
+        {
+            get { return targetWpfColor; }
+            set { targetWpfColor = value; }
         }
 
         protected override void OnStateChange()
@@ -101,143 +173,109 @@ namespace NinjaTrader.NinjaScript.Indicators
                 PaintPriceMarkers = false;
                 DrawOnPricePanel = true;
             }
+            else if (State == State.DataLoaded)
+            {
+                // RiskRewardTool pattern: hook the chart-panel mouse events as
+                // soon as the chart exists (UI thread). Doing this inside
+                // OnRender runs on the render thread and breaks the render.
+                SubscribeMouse();
+            }
             else if (State == State.Realtime)
             {
-                EnsureLines(CurrentBar);
+                // Seed prices from the current market so lines are visible
+                // immediately; SYNC_STATE will correct them.
+                EnsureInitialPrices();
                 StartWebSocket();
-                if (!pollLoopStarted)
-                {
-                    pollLoopStarted = true;
-                    PreparePollLoop();
-                }
+                CreateLabelFormat();
+                // Re-subscribe in case DataLoaded ran before ChartControl was
+                // fully attached (RiskRewardTool re-subscribes the same way).
+                SubscribeMouse();
             }
             else if (State == State.Terminated)
             {
                 StopWebSocket();
-                try
-                {
-                    if (entryLine != null) RemoveDrawObject("LineHost_Entry");
-                    if (stopLine != null) RemoveDrawObject("LineHost_Stop");
-                    if (targetLine != null) RemoveDrawObject("LineHost_Target");
-                }
-                catch { }
+                UnsubscribeMouse();
+                DisposeBrushes();
+                DisposeLabel();
+                UnsubscribeChartEvents();
             }
         }
 
-        // Start the drag-poll loop on a background task (kept separate from
-        // OnStateChange so the async worker cannot block NT8's UI thread).
-        private void PreparePollLoop()
+        // Re-subscribe when the user switches charts (RiskRewardTool's
+        // SubscribeChartEvents equivalent): the panel events move with the
+        // chart, and stale handlers would silently stop receiving input.
+        private void ChartLoadedHandler(object sender, System.Windows.RoutedEventArgs e)
         {
-            CancellationTokenSource cts = wsCts;
-            Task.Run(() => DragPollLoopAsync(cts != null ? cts.Token : CancellationToken.None));
+            SubscribeMouse();
+        }
+
+        private void SubscribeChartEvents()
+        {
+            try
+            {
+                if (chartEventsHooked || ChartControl == null) return;
+                ChartControl.Loaded += ChartLoadedHandler;
+                chartEventsHooked = true;
+            }
+            catch { }
+        }
+
+        private void UnsubscribeChartEvents()
+        {
+            try
+            {
+                if (!chartEventsHooked || ChartControl == null) return;
+                ChartControl.Loaded -= ChartLoadedHandler;
+                chartEventsHooked = false;
+            }
+            catch { }
+        }
+
+        private void CreateLabelFormat()
+        {
+            try
+            {
+                if (textFormat != null) return;
+                textFormat = new SharpDX.DirectWrite.TextFormat(
+                    NinjaTrader.Core.Globals.DirectWriteFactory,
+                    "Consolas",
+                    SharpDX.DirectWrite.FontWeight.Bold,
+                    SharpDX.DirectWrite.FontStyle.Normal,
+                    12f);
+                textFormat.TextAlignment = SharpDX.DirectWrite.TextAlignment.Leading;
+                textFormat.ParagraphAlignment = SharpDX.DirectWrite.ParagraphAlignment.Center;
+            }
+            catch { }
+        }
+
+        private void DisposeLabel()
+        {
+            try
+            {
+                if (labelBgBrush != null) { labelBgBrush.Dispose(); labelBgBrush = null; }
+                if (textBrush != null) { textBrush.Dispose(); textBrush = null; }
+                if (textFormat != null) { textFormat.Dispose(); textFormat = null; }
+            }
+            catch { }
         }
 
         protected override void OnBarUpdate()
         {
             if (State != State.Realtime) return;
-            // Keep lines attached to the latest bar as the chart advances.
-            EnsureLines(CurrentBar);
-        }
-
-        // ------------------------------------------------------------------
-        // Line hosting: create / reposition the three draggable horizontal lines.
-        // ------------------------------------------------------------------
-        private void EnsureLines(int barIndex)
-        {
-            double basePrice = GetCurrentPrice();
-            if (basePrice <= 0) return;
-
-            double entry, stop, target;
-            if (isInPosition && currentEntry > 0)
+            if (!hasEngineState && !isDraggingEntry && !isDraggingStop && !isDraggingTarget)
             {
-                entry = currentEntry;
-                stop = currentStop > 0 ? currentStop : currentEntry - 10 * TickSize;
-                target = currentTarget > 0 ? currentTarget : currentEntry + 20 * TickSize;
-            }
-            else
-            {
-                entry = basePrice;
-                stop = basePrice - 10 * TickSize;
-                target = basePrice + 20 * TickSize;
-            }
-
-            if (entryLine == null)
-                entryLine = Draw.HorizontalLine(this, "LineHost_Entry", entry, Brushes.DodgerBlue);
-            if (stopLine == null)
-                stopLine = Draw.HorizontalLine(this, "LineHost_Stop", stop, Brushes.Crimson);
-            if (targetLine == null)
-                targetLine = Draw.HorizontalLine(this, "LineHost_Target", target, Brushes.LimeGreen);
-
-            if (!suppressDragPush)
-            {
-                Reposition(entryLine, entry);
-                Reposition(stopLine, stop);
-                Reposition(targetLine, target);
+                // Before the engine first reports state, follow the market so
+                // the lines stay visible/attached to streaming bars.
+                EnsureInitialPrices();
+                if (ChartControl != null) ChartControl.InvalidateVisual();
             }
         }
 
-        private static void Reposition(NinjaTrader.NinjaScript.DrawingTools.HorizontalLine ln, double price)
-        {
-            if (ln == null || ln.StartAnchor == null) return;
-            if (Math.Abs(ln.StartAnchor.Price - price) < 0.0001) return;
-            ln.StartAnchor.Price = price;
-        }
-
         // ------------------------------------------------------------------
-        // Drag detection: this NT8 build has no OnChartObjectModified hook, so
-        // we poll the line anchors at 250 ms. ChartAnchor.Price updates live as
-        // the user drags; when any price moved, push UPDATE_PRICES (debounced).
+        // Prices
         // ------------------------------------------------------------------
-        private async Task DragPollLoopAsync(CancellationToken ct)
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(250, ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                if (!isWsConnected || suppressDragPush) continue;
-                if (entryLine == null || stopLine == null || targetLine == null) continue;
-                try
-                {
-                    double entry = entryLine.StartAnchor != null ? entryLine.StartAnchor.Price : 0;
-                    double stop = stopLine.StartAnchor != null ? stopLine.StartAnchor.Price : 0;
-                    double target = targetLine.StartAnchor != null ? targetLine.StartAnchor.Price : 0;
-                    if (entry <= 0 || stop <= 0 || target <= 0) continue;
-
-                    bool moved =
-                        Math.Abs(entry - lastPushedEntry) > 0.0001 ||
-                        Math.Abs(stop - lastPushedStop) > 0.0001 ||
-                        Math.Abs(target - lastPushedTarget) > 0.0001;
-                    if (!moved) continue;
-
-                    long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-                    if (now - lastSendUnix < SendDebounceMs) continue;
-                    lastSendUnix = now;
-
-                    lastPushedEntry = entry;
-                    lastPushedStop = stop;
-                    lastPushedTarget = target;
-
-                    string payload = string.Format(
-                        CultureInfo.InvariantCulture,
-                        "{{\"entryPrice\":{0},\"stopPrice\":{1},\"targetPrice\":{2}}}",
-                        entry.ToString("R", CultureInfo.InvariantCulture),
-                        stop.ToString("R", CultureInfo.InvariantCulture),
-                        target.ToString("R", CultureInfo.InvariantCulture));
-                    SendWs("UPDATE_PRICES", payload);
-                }
-                catch { }
-            }
-        }
-
         private double GetCurrentPrice()
         {
-            if (CurrentBar < 0) return 0;
             try
             {
                 double c = Close[0];
@@ -253,9 +291,144 @@ namespace NinjaTrader.NinjaScript.Indicators
             return 0;
         }
 
+        private void EnsureInitialPrices()
+        {
+            double basePrice = GetCurrentPrice();
+            if (basePrice <= 0) return;
+            if (entryPrice <= 0) { entryPrice = basePrice; stopPrice = basePrice - 10 * TickSize; targetPrice = basePrice + 20 * TickSize; }
+        }
+
+        private double RoundToTickSize(double price)
+        {
+            double tick = TickSize > 0 ? TickSize : 0.25;
+            return Math.Round(price / tick) * tick;
+        }
+
         // ------------------------------------------------------------------
-        // Engine -> lines: reposition anchors to engine's authoritative state
-        // (SYNC_STATE broadcast). Suppresses the drag-push to avoid a loop.
+        // Mouse drag handling (RiskRewardTool pattern): events are hooked on
+        // ChartPanels[0]; we own the entire gesture.
+        // ------------------------------------------------------------------
+        private void SubscribeMouse()
+        {
+            if (subscribedMouse) return;
+            if (ChartControl == null || ChartControl.ChartPanels == null || ChartControl.ChartPanels.Count == 0) return;
+            ChartPanel panel = ChartControl.ChartPanels[0];
+            panel.AddHandler(UIElement.MouseMoveEvent, new MouseEventHandler(OnChartMouseMove), true);
+            panel.AddHandler(UIElement.MouseLeftButtonDownEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonDown), true);
+            panel.AddHandler(UIElement.MouseLeftButtonUpEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonUp), true);
+            subscribedMouse = true;
+        }
+
+        private void UnsubscribeMouse()
+        {
+            if (!subscribedMouse) return;
+            if (ChartControl == null || ChartControl.ChartPanels == null || ChartControl.ChartPanels.Count == 0) return;
+            ChartPanel panel = ChartControl.ChartPanels[0];
+            panel.RemoveHandler(UIElement.MouseMoveEvent, new MouseEventHandler(OnChartMouseMove));
+            panel.RemoveHandler(UIElement.MouseLeftButtonDownEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonDown));
+            panel.RemoveHandler(UIElement.MouseLeftButtonUpEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonUp));
+            subscribedMouse = false;
+            isDraggingEntry = isDraggingStop = isDraggingTarget = false;
+        }
+
+        private void OnChartMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (cachedScale == null || ChartControl == null) return;
+            System.Windows.Point p = e.GetPosition((IInputElement)sender);
+
+            float entryY = (float)cachedScale.GetYByValueWpf(entryPrice);
+            float stopY = (float)cachedScale.GetYByValueWpf(stopPrice);
+            float targetY = (float)cachedScale.GetYByValueWpf(targetPrice);
+
+            double dEntry = Math.Abs(p.Y - entryY);
+            double dStop = Math.Abs(p.Y - stopY);
+            double dTarget = Math.Abs(p.Y - targetY);
+
+            if (dEntry < HitTestPixels)
+            {
+                isDraggingEntry = true;
+                e.Handled = true;
+                ((IInputElement)sender).CaptureMouse();
+                mouseCaptured = true;
+            }
+            else if (dStop < HitTestPixels)
+            {
+                isDraggingStop = true;
+                e.Handled = true;
+                ((IInputElement)sender).CaptureMouse();
+                mouseCaptured = true;
+            }
+            else if (dTarget < HitTestPixels)
+            {
+                isDraggingTarget = true;
+                e.Handled = true;
+                ((IInputElement)sender).CaptureMouse();
+                mouseCaptured = true;
+            }
+        }
+
+        private void OnChartMouseMove(object sender, MouseEventArgs e)
+        {
+            if (!isDraggingEntry && !isDraggingStop && !isDraggingTarget) return;
+            if (cachedScale == null || ChartControl == null) return;
+
+            System.Windows.Point p = e.GetPosition((IInputElement)sender);
+            double newPrice = cachedScale.GetValueByYWpf(p.Y);
+            newPrice = RoundToTickSize(newPrice);
+            if (newPrice <= 0) return;
+
+            if (isDraggingEntry) entryPrice = newPrice;
+            else if (isDraggingStop) stopPrice = newPrice;
+            else if (isDraggingTarget) targetPrice = newPrice;
+
+            ChartControl.InvalidateVisual();
+            PushPricesIfDebounced();
+            e.Handled = true;
+        }
+
+        private void OnChartMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            bool wasDragging = isDraggingEntry || isDraggingStop || isDraggingTarget;
+            isDraggingEntry = false;
+            isDraggingStop = false;
+            isDraggingTarget = false;
+            if (mouseCaptured) ((IInputElement)sender).ReleaseMouseCapture();
+            mouseCaptured = false;
+            if (wasDragging)
+            {
+                // Final authoritative push on release.
+                PushPrices();
+                if (ChartControl != null) ChartControl.InvalidateVisual();
+            }
+            e.Handled = true;
+        }
+
+        // ------------------------------------------------------------------
+        // Pushing prices to the Go engine (UPDATE_PRICES).
+        // ------------------------------------------------------------------
+        private void PushPricesIfDebounced()
+        {
+            long now = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+            if (now - lastSendUnix < SendDebounceMs) return;
+            lastSendUnix = now;
+            PushPrices();
+        }
+
+        private void PushPrices()
+        {
+            if (entryPrice <= 0 || stopPrice <= 0 || targetPrice <= 0) return;
+            string payload = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"entryPrice\":{0},\"stopPrice\":{1},\"targetPrice\":{2}}}",
+                entryPrice.ToString("R", CultureInfo.InvariantCulture),
+                stopPrice.ToString("R", CultureInfo.InvariantCulture),
+                targetPrice.ToString("R", CultureInfo.InvariantCulture));
+            SendWs("UPDATE_PRICES", payload);
+        }
+
+        // ------------------------------------------------------------------
+        // Engine -> lines: on SYNC_STATE, reposition lines to the engine's
+        // authoritative prices. Ignored mid-drag (we never fight the user).
         // ------------------------------------------------------------------
         private void ApplyEngineState(string payload)
         {
@@ -266,32 +439,200 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (root == null) return;
 
                 Dictionary<string, object> pos = root.ContainsKey("position") ? root["position"] as Dictionary<string, object> : null;
-                string mp = GetField(root, "marketPosition", "Flat");
+                string mp = "Flat";
+                int posQty = 1;
                 if (pos != null && pos.ContainsKey("marketPosition") && pos["marketPosition"] != null)
                     mp = pos["marketPosition"].ToString();
+                if (pos != null && pos.ContainsKey("quantity") && pos["quantity"] != null)
+                {
+                    int q;
+                    if (int.TryParse(pos["quantity"].ToString(), out q)) posQty = q;
+                }
 
                 double entry = GetDoubleField(root, "entryPrice", 0);
                 double stop = GetDoubleField(root, "stopPrice", 0);
                 double target = GetDoubleField(root, "targetPrice", 0);
 
                 bool inPos = !string.Equals(mp, "Flat", StringComparison.OrdinalIgnoreCase);
-                if (!inPos || entry <= 0) return; // keep draggable placeholder lines
+                if (isDraggingEntry || isDraggingStop || isDraggingTarget) return; // user is moving a line
 
-                suppressDragPush = true;
-                try
+                if (inPos && entry > 0)
                 {
-                    isInPosition = true;
-                    currentEntry = entry;
-                    currentStop = stop > 0 ? stop : entry - 10 * TickSize;
-                    currentTarget = target > 0 ? target : entry + 20 * TickSize;
-                    EnsureLines(CurrentBar);
+                    engineInPosition = true;
+                    currentPositionSize = posQty > 0 ? posQty : 1;
+                    entryPrice = entry;
+                    stopPrice = stop > 0 ? stop : entry - 10 * TickSize;
+                    targetPrice = target > 0 ? target : entry + 20 * TickSize;
+                    hasEngineState = true;
                 }
-                finally
+                else if (!inPos)
                 {
-                    suppressDragPush = false;
+                    // Flat: keep the user's plan levels if present, otherwise
+                    // seed near market. hasEngineState stays true once seen so
+                    // bars don't yank plan lines around.
+                    if (!hasEngineState)
+                    {
+                        double basePrice = GetCurrentPrice();
+                        if (basePrice > 0) { entryPrice = entry > 0 ? entry : basePrice; stopPrice = stop > 0 ? stop : basePrice - 10 * TickSize; targetPrice = target > 0 ? target : basePrice + 20 * TickSize; }
+                    }
+                    else
+                    {
+                        if (entry > 0) entryPrice = entry;
+                        if (stop > 0) stopPrice = stop;
+                        if (target > 0) targetPrice = target;
+                    }
+                    hasEngineState = true;
+                    engineInPosition = false;
+                }
+
+                if (ChartControl != null) ChartControl.InvalidateVisual();
+            }
+            catch { }
+        }
+
+        // ------------------------------------------------------------------
+        // Rendering: three full-width horizontal lines (RiskRewardTool style).
+        // ------------------------------------------------------------------
+        protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
+        {
+            base.OnRender(chartControl, chartScale);
+            cachedScale = chartScale;
+            // NOTE: mouse handlers are hooked in State.DataLoaded / Realtime
+            // (UI thread) — never here, OnRender runs on the render thread and
+            // touching WPF UI from it breaks rendering (the "lines vanished" bug).
+            if (RenderTarget == null || chartControl == null || chartScale == null) return;
+            if (entryPrice <= 0 || stopPrice <= 0 || targetPrice <= 0) return;
+
+            double canvasLeft = chartControl.CanvasLeft;
+            double canvasRight = chartControl.CanvasRight;
+
+            float entryY = (float)chartScale.GetYByValue(entryPrice);
+            float stopY = (float)chartScale.GetYByValue(stopPrice);
+            float targetY = (float)chartScale.GetYByValue(targetPrice);
+
+            if (entryBrush == null || cachedRenderTarget != RenderTarget)
+            {
+                if (entryBrush != null) entryBrush.Dispose();
+                if (stopBrush != null) stopBrush.Dispose();
+                if (targetBrush != null) targetBrush.Dispose();
+                if (targetHoverBrush != null) targetHoverBrush.Dispose();
+                cachedRenderTarget = RenderTarget;
+                entryBrush = CreateDxBrush(entryWpfColor);
+                stopBrush = CreateDxBrush(stopWpfColor);
+                targetBrush = CreateDxBrush(targetWpfColor);
+                targetHoverBrush = CreateDxBrush(targetWpfColor, 0.7f);
+            }
+
+            // Winner lines only when engine reports an open position; plan mode
+            // always shows draggable entry/stop/target lines.
+            RenderTarget.DrawLine(new Vector2((float)canvasLeft, entryY), new Vector2((float)canvasRight, entryY), entryBrush, lineThickness);
+            RenderTarget.DrawLine(new Vector2((float)canvasLeft, stopY), new Vector2((float)canvasRight, stopY), stopBrush, lineThickness);
+            RenderTarget.DrawLine(new Vector2((float)canvasLeft, targetY), new Vector2((float)canvasRight, targetY), targetBrush, lineThickness);
+
+            // RiskRewardTool-style detail boxes on each line.
+            EnsureLabelBrushes();
+            double pointValue = Instrument.MasterInstrument.PointValue;
+            double slDist = Math.Abs(entryPrice - stopPrice);
+            double stopDollars = slDist * pointValue;
+            double tpDist = Math.Abs(targetPrice - entryPrice);
+            double tpDollars = tpDist * pointValue;
+
+            DrawLineLabel(canvasLeft, canvasRight, entryY, entryBrush,
+                string.Format(" ENTRY ({0} contracts):\n {1:F2}", PositionQty(), entryPrice)); 
+            DrawLineLabel(canvasLeft, canvasRight, stopY, stopBrush,
+                string.Format(" STOP ({0} contracts):\n {1:F2} (-{2:F2} pts) (-{3:C2})", PositionQty(), stopPrice, slDist, stopDollars));
+            DrawLineLabel(canvasLeft, canvasRight, targetY, targetBrush,
+                string.Format(" TARGET ({0} contracts):\n {1:F2} (+{2:F2} pts) (+{3:C2})", PositionQty(), targetPrice, tpDist, tpDollars));
+        }
+
+        // PositionSizeDoc: qty shown on labels. When the engine reports an open
+        // position we show its qty; otherwise the plan's presumed size (use the
+        // engine's calculated qty for flat if known, else 1).
+        private int PositionQty()
+        {
+            if (engineInPosition) return currentPositionSize;
+            return 1;
+        }
+
+        private void EnsureLabelBrushes()
+        {
+            try
+            {
+                if (labelBgBrush == null || cachedRenderTarget != RenderTarget)
+                {
+                    if (labelBgBrush != null) { labelBgBrush.Dispose(); labelBgBrush = null; }
+                    if (textBrush != null) { textBrush.Dispose(); textBrush = null; }
+                    labelBgBrush = new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(0.05f, 0.06f, 0.09f, 0.85f));
+                    textBrush = new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(0.95f, 0.96f, 0.98f, 1f));
                 }
             }
             catch { }
+        }
+
+        // Filled label box (bg + colored border + multi-line text) anchored to
+        // its line's Y, placed Right/Left/Middle per the LabelPosition property.
+        private void DrawLineLabel(double canvasLeft, double canvasRight, float lineY,
+            SharpDX.Direct2D1.Brush borderBrush, string text)
+        {
+            if (RenderTarget == null || textFormat == null || labelBgBrush == null || textBrush == null) return;
+            try
+            {
+                float labelX = (float)canvasRight - LabelWidth - 10f; // Right
+                if (labelPosition == NinjaTrader.NinjaScript.EngLineLabelPosition.Left)
+                    labelX = (float)canvasLeft + 10f;
+                else if (labelPosition == NinjaTrader.NinjaScript.EngLineLabelPosition.Middle)
+                    labelX = (float)canvasLeft + (float)(canvasRight - canvasLeft) / 2f - LabelWidth / 2f;
+
+                float labelY = lineY - LabelHeight / 2f;
+                SharpDX.RectangleF box = new SharpDX.RectangleF(labelX, labelY, LabelWidth, LabelHeight);
+                RenderTarget.FillRectangle(box, labelBgBrush);
+                RenderTarget.DrawRectangle(box, borderBrush, 1.5f);
+                RenderTarget.DrawText(text, textFormat, new SharpDX.RectangleF(labelX + 5f, labelY, LabelWidth - 10f, LabelHeight), textBrush);
+            }
+            catch { }
+        }
+
+        private SharpDX.Direct2D1.Brush CreateDxBrush(System.Windows.Media.Brush wpf)
+        {
+            try
+            {
+                System.Windows.Media.SolidColorBrush scb = wpf as System.Windows.Media.SolidColorBrush;
+                if (scb != null)
+                {
+                    System.Windows.Media.Color cc = scb.Color;
+                    return new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(cc.R / 255f, cc.G / 255f, cc.B / 255f, cc.A / 255f));
+                }
+            }
+            catch { }
+            return new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(0.3f, 0.4f, 1.0f, 1.0f));
+        }
+
+        private SharpDX.Direct2D1.Brush CreateDxBrush(System.Windows.Media.Brush wpf, float alpha)
+        {
+            try
+            {
+                System.Windows.Media.SolidColorBrush scb = wpf as System.Windows.Media.SolidColorBrush;
+                if (scb != null)
+                {
+                    System.Windows.Media.Color cc = scb.Color;
+                    return new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(cc.R / 255f, cc.G / 255f, cc.B / 255f, Math.Min(1f, alpha)));
+                }
+            }
+            catch { }
+            return new SharpDX.Direct2D1.SolidColorBrush(RenderTarget, new SharpDX.Color4(0.3f, 0.4f, 1.0f, 1.0f));
+        }
+
+        private void DisposeBrushes()
+        {
+            try
+            {
+                if (entryBrush != null) { entryBrush.Dispose(); entryBrush = null; }
+                if (stopBrush != null) { stopBrush.Dispose(); stopBrush = null; }
+                if (targetBrush != null) { targetBrush.Dispose(); targetBrush = null; }
+                if (targetHoverBrush != null) { targetHoverBrush.Dispose(); targetHoverBrush = null; }
+            }
+            catch { }
+            cachedRenderTarget = null;
         }
 
         // ------------------------------------------------------------------
@@ -423,7 +764,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             try { queueSignal.Release(); } catch { }
         }
 
-        // ---- JSON helpers (window of convenience; same style as the gateway) ----
+        // ---- JSON helpers (same style as the gateway) ----
         private static string GetField(object obj, string key, string fallback)
         {
             var dict = obj as Dictionary<string, object>;

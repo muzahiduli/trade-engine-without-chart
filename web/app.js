@@ -185,6 +185,27 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- Panel layout toggle: vertical side column vs horizontal top bar ----
+window.toggleLayout = function () {
+  const main = document.querySelector('main');
+  const btn = document.getElementById('btnLayout');
+  if (!main) return;
+  const horiz = !main.classList.contains('layout-horizontal');
+  main.classList.toggle('layout-horizontal', horiz);
+  if (btn) btn.title = horiz ? 'Toggle panel layout: horizontal top bar' : 'Toggle panel layout: vertical side column';
+  try { localStorage.setItem('tradeEngine_layout', horiz ? 'horizontal' : 'vertical'); } catch (e) {}
+};
+
+function applySavedLayout() {
+  const main = document.querySelector('main');
+  if (!main) return;
+  let horiz = false;
+  try { horiz = localStorage.getItem('tradeEngine_layout') === 'horizontal'; } catch (e) {}
+  main.classList.toggle('layout-horizontal', horiz);
+  const btn = document.getElementById('btnLayout');
+  if (btn) btn.title = horiz ? 'Toggle panel layout: horizontal top bar' : 'Toggle panel layout: vertical side column';
+}
+
 // Boot terminal
 function boot() {
   // connectWS first: the status element defaults to "CONNECTING..." in the HTML.
@@ -192,6 +213,7 @@ function boot() {
   try { initHotkeys(); } catch (e) { console.error('initHotkeys failed:', e); }
   // Load saved engine settings (inputs) into the panel.
   try { applyEngineSettings(); } catch (e) { console.error('applyEngineSettings failed:', e); }
+  try { applySavedLayout(); } catch (e) { console.error('applySavedLayout failed:', e); }
 }
 
 if (document.readyState === 'loading') {
