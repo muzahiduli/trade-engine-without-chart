@@ -191,6 +191,17 @@
       <div class="panel" style="margin-bottom: 10px;">
         <div class="panel-title" style="margin-bottom: 6px;">Tracking & Stop Guards</div>
         
+        <!-- Scale-Out % quick presets (Ctrl+F closes this % of position) -->
+        <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 6px;">
+          <span style="font-size: 10px; color: var(--text-muted); font-weight: 700;">SO%:</span>
+          <span id="soPctBadge" class="badge" style="background: rgba(255, 209, 102, 0.15); color: #ffd166; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px;">50%</span>
+          <button class="btn" style="font-size: 10px; padding: 3px 7px;" onclick="setScaleOutPercent(5)">5%</button>
+          <button class="btn" style="font-size: 10px; padding: 3px 7px;" onclick="setScaleOutPercent(10)">10%</button>
+          <button class="btn" style="font-size: 10px; padding: 3px 7px;" onclick="setScaleOutPercent(25)">25%</button>
+          <button class="btn" style="font-size: 10px; padding: 3px 7px;" onclick="setScaleOutPercent(50)">50%</button>
+          <button class="btn" style="font-size: 10px; padding: 3px 7px;" onclick="setScaleOutPercent(75)">75%</button>
+        </div>
+
         <!-- Lock Stop Loss in Main Bar -->
         <div class="btn-group" style="margin-bottom: 6px;">
           <button id="btnLockSl" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleLockSl()">🔓 Lock SL: OFF</button>
@@ -442,7 +453,7 @@
     </table>
   </div>
 
-  <script type="module" src="app.js?v=120"></script>
+  <script type="module" src="app.js?v=121"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');

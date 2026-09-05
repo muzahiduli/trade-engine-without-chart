@@ -286,6 +286,8 @@ export function renderUI() {
   if (elTrailOffset && document.activeElement !== elTrailOffset) elTrailOffset.value = state.trailStopOffsetTicks ?? 1;
   const elScalePct = document.getElementById('settingScaleOutPercent');
   if (elScalePct && document.activeElement !== elScalePct) elScalePct.value = state.scaleOutPercent ?? 50;
+  const soBadge = document.getElementById('soPctBadge');
+  if (soBadge) soBadge.textContent = (state.scaleOutPercent ?? 50) + '%';
   const elScaleTimeout = document.getElementById('settingScaleOutTimeoutSeconds');
   if (elScaleTimeout && document.activeElement !== elScaleTimeout) elScaleTimeout.value = state.scaleOutTimeoutSeconds ?? 3;
   const elScalePriceMode = document.getElementById('settingScaleOutPriceMode');
@@ -423,6 +425,17 @@ export function togglePartial() {
 export function toggleShowLines() {
   const state = getState();
   if (state) sendConfig({ showLines: !state.showLines });
+}
+
+// Set the Scale-Out % (Ctrl+F closes this fraction of the position).
+// Also syncs the settings-modal number field so both reflect the same value.
+export function setScaleOutPercent(pct) {
+  const v = Math.min(100, Math.max(5, Math.round(Number(pct) || 50)));
+  sendConfig({ scaleOutPercent: v });
+  const el = document.getElementById('settingScaleOutPercent');
+  if (el && document.activeElement !== el) el.value = String(v);
+  const badge = document.getElementById('soPctBadge');
+  if (badge) badge.textContent = v + '%';
 }
 
 export function onAccountChanged(accName) {

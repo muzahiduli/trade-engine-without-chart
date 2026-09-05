@@ -18,10 +18,7 @@ import {
   onQuickSlPadChanged,
   togglePartial,
   toggleShowLines,
-  toggleAutoTrack,
-  onTrackAnchorChanged,
-  onTrackTfChanged,
-  onTrackOffsetChanged,
+  setScaleOutPercent,
   onAccountChanged,
   openEngineSettingsModal,
   closeChartSettingsModal,
@@ -69,10 +66,7 @@ window.toggleLockSl = toggleLockSl;
 window.onQuickSlPadChanged = onQuickSlPadChanged;
 window.togglePartial = togglePartial;
 window.toggleShowLines = toggleShowLines;
-window.toggleAutoTrack = toggleAutoTrack;
-window.onTrackAnchorChanged = onTrackAnchorChanged;
-window.onTrackTfChanged = onTrackTfChanged;
-window.onTrackOffsetChanged = onTrackOffsetChanged;
+window.setScaleOutPercent = setScaleOutPercent;
 window.onAccountChanged = onAccountChanged;
 window.openEngineSettingsModal = openEngineSettingsModal;
 window.closeChartSettingsModal = closeChartSettingsModal;
