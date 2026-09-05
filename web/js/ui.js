@@ -9,7 +9,7 @@ export function renderUI() {
 
   const inPos = isInPosition();
   // Go owns ALL derived trading math (see risk.RecalculateState): qty, risk,
-  // reward and R:R are broadcast in SYNC_STATE and rendered verbatim — the UI
+  // reward and R:R are broadcast in SYNC_STATE and rendered verbatim � the UI
   // never recomputes them (client recomputation drifted from the engine and
   // showed wrong HUD numbers / execute sizes).
   const qty = inPos ? (state.position?.quantity || 0) : (state.calculatedQty || 1);
@@ -64,7 +64,7 @@ export function renderUI() {
   if (protBadge) {
     if (state.isUnprotectedPosition) {
       protBadge.style.display = 'inline-block';
-      protBadge.innerText = '⚠️ NO STOP LOSS!';
+      protBadge.innerText = '?? NO STOP LOSS!';
       protBadge.title = state.protectionAlert || 'Position is open with no working stop loss!';
     } else {
       protBadge.style.display = 'none';
@@ -92,7 +92,7 @@ export function renderUI() {
   const btnArm = document.getElementById('btnHotkeysArm');
   if (btnArm) {
     const armed = state.hotkeysArmed !== false;
-    btnArm.innerText = armed ? '🛡️ ARMED' : '⚠️ DISARMED';
+    btnArm.innerText = armed ? '??? ARMED' : '?? DISARMED';
     btnArm.style.color = armed ? '#00c076' : '#ffd166';
     btnArm.style.borderColor = armed ? 'rgba(0, 192, 118, 0.4)' : 'rgba(255, 209, 102, 0.4)';
   }
@@ -104,19 +104,19 @@ export function renderUI() {
     const connected = state.hotkeyAddonConnected === true;
     const enabled = state.hotkeyForwardingEnabled !== false;
     if (!connected) {
-      hkInd.textContent = '⌨ HOTKEYS: OFFLINE';
+      hkInd.textContent = '? HOTKEYS: OFFLINE';
       hkInd.style.color = '#ff4757';
       hkInd.style.background = 'rgba(255, 71, 87, 0.15)';
       hkInd.style.border = '1px solid rgba(255, 71, 87, 0.4)';
       hkInd.style.display = 'inline-block';
     } else if (enabled) {
-      hkInd.textContent = '⌨ HOTKEYS: ON';
+      hkInd.textContent = '? HOTKEYS: ON';
       hkInd.style.color = '#00c076';
       hkInd.style.background = 'rgba(0, 192, 118, 0.15)';
       hkInd.style.border = '1px solid rgba(0, 192, 118, 0.4)';
       hkInd.style.display = 'inline-block';
     } else {
-      hkInd.textContent = '⌨ HOTKEYS: OFF';
+      hkInd.textContent = '? HOTKEYS: OFF';
       hkInd.style.color = '#ffd166';
       hkInd.style.background = 'rgba(255, 209, 102, 0.15)';
       hkInd.style.border = '1px solid rgba(255, 209, 102, 0.4)';
@@ -149,7 +149,7 @@ export function renderUI() {
       liveCard.style.background = isLong ? 'rgba(0, 192, 118, 0.05)' : 'rgba(255, 59, 87, 0.05)';
 
       if (liveDot) liveDot.style.background = isLong ? 'var(--accent-green)' : 'var(--accent-red)';
-      liveBadge.innerText = isLong ? '▲ LONG' : '▼ SHORT';
+      liveBadge.innerText = isLong ? '? LONG' : '? SHORT';
       liveBadge.style.background = isLong ? 'rgba(0, 192, 118, 0.2)' : 'rgba(255, 59, 87, 0.2)';
       liveBadge.style.color = isLong ? 'var(--accent-green)' : 'var(--accent-red)';
 
@@ -185,7 +185,7 @@ export function renderUI() {
   }
 
   // 4. Auto Order Type Resolution Display (decision computed by Go's
-  // BuildExecutionPlan / RecalculateState — the UI just renders it)
+  // BuildExecutionPlan / RecalculateState � the UI just renders it)
   const autoBadge = document.getElementById('autoOrderTypeBadge');
   if (autoBadge) {
     const isBreakout = state.isBreakout === true;
@@ -219,7 +219,7 @@ export function renderUI() {
   const btnDyn = document.getElementById('btnDynRisk');
   if (btnDyn) {
     btnDyn.className = state.enableDynRisk ? 'btn active' : 'btn';
-    btnDyn.innerText = `🛡️ Dynamic Risk: ${state.enableDynRisk ? 'ON' : 'OFF'}`;
+    btnDyn.innerText = `??? Dynamic Risk: ${state.enableDynRisk ? 'ON' : 'OFF'}`;
   }
   if (dynPanel) {
     dynPanel.style.display = state.enableDynRisk ? 'block' : 'none';
@@ -232,13 +232,13 @@ export function renderUI() {
   const btnLockSl = document.getElementById('btnLockSl');
   if (btnLockSl) {
     btnLockSl.className = state.isSlLocked ? 'btn active' : 'btn';
-    btnLockSl.innerText = state.isSlLocked ? '🔒 Lock SL: ON' : '🔓 Lock SL: OFF';
+    btnLockSl.innerText = state.isSlLocked ? '?? Lock SL: ON' : '?? Lock SL: OFF';
   }
 
   const btnAutoTrack = document.getElementById('btnAutoTrack');
   if (btnAutoTrack) {
     btnAutoTrack.className = state.isAutoTrackEnabled ? 'btn active' : 'btn';
-    btnAutoTrack.innerText = state.isAutoTrackEnabled ? '🎯 Auto-Track: ON' : '🎯 Auto-Track: OFF';
+    btnAutoTrack.innerText = state.isAutoTrackEnabled ? '?? Auto-Track: ON' : '?? Auto-Track: OFF';
   }
 
   // Sync tracking controls (anchor / track timeframe / offset) from hub state.
@@ -338,7 +338,7 @@ export function renderUI() {
   const btnPartial = document.getElementById('btnPartial');
   if (btnPartial) {
     btnPartial.className = state.isPartialProfit ? 'btn active' : 'btn';
-    btnPartial.innerText = `⚖️ Partial Profit: ${state.isPartialProfit ? 'ON' : 'OFF'}`;
+    btnPartial.innerText = `?? Partial Profit: ${state.isPartialProfit ? 'ON' : 'OFF'}`;
   }
 
   const btnLines = document.getElementById('btnShowLines');
@@ -423,7 +423,7 @@ export function toggleLockSl() {
   const btnLockSl = document.getElementById('btnLockSl');
   if (btnLockSl) {
     btnLockSl.className = nextVal ? 'btn active' : 'btn';
-    btnLockSl.innerText = nextVal ? '🔒 Lock SL: ON' : '🔓 Lock SL: OFF';
+    btnLockSl.innerText = nextVal ? '?? Lock SL: ON' : '?? Lock SL: OFF';
   }
   sendConfig({ isSlLocked: nextVal });
 }
@@ -453,7 +453,7 @@ export function toggleAutoTrack() {
   const btn = document.getElementById('btnAutoTrack');
   if (btn) {
     btn.className = nextVal ? 'btn active' : 'btn';
-    btn.innerText = nextVal ? '🎯 Auto-Track: ON' : '🎯 Auto-Track: OFF';
+    btn.innerText = nextVal ? '?? Auto-Track: ON' : '?? Auto-Track: OFF';
   }
   sendConfig({ isAutoTrackEnabled: nextVal });
 }
@@ -535,7 +535,7 @@ export function toggleHotkeysArmed() {
 }
 
 export function triggerKillSwitch() {
-  if (confirm('🚨 EMERGENCY KILL SWITCH: Flatten open position, cancel all orders, and disable trading?')) {
+  if (confirm('?? EMERGENCY KILL SWITCH: Flatten open position, cancel all orders, and disable trading?')) {
     import('./hotkeys.js').then(m => {
       import('./ws.js').then(w => w.sendHotkey('KILL_SWITCH'));
     });

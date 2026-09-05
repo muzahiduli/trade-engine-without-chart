@@ -64,7 +64,7 @@ body.bar-collapsed #barCollapseStrip {
   border-bottom: 1px solid var(--border-color);
 }
 body.bar-collapsed #barCollapseStrip span {
-  display: none; /* hide the TOP▲ text; the sliver itself is the restore target */
+  display: none; /* hide the TOP? text; the sliver itself is the restore target */
 }
 
 .top-bar-left {
@@ -187,7 +187,7 @@ body.bar-collapsed #barCollapseStrip span {
 }
 
 /* ---- Horizontal (top-bar) layout mode ----
-   Toggled via the ⇋ LAYOUT button: panels flow side-by-side as a compact
+   Toggled via the ? LAYOUT button: panels flow side-by-side as a compact
    wide strip instead of one tall column, so the panel works docked as a
    horizontal bar over/under the charts. */
 main.layout-horizontal {

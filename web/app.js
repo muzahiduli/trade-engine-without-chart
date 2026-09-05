@@ -1,4 +1,4 @@
-// Trade Engine Command Center — Main Application Entry Point
+// Trade Engine Command Center � Main Application Entry Point
 // No charts, no overlay: this is the execution/risk control panel only.
 // The SL/TP/entry lines live on the NinjaTrader chart (LineHost drawing tool)
 // and the engine is authoritative for all logic.
@@ -82,7 +82,7 @@ window.toggleHotkeysArmed = toggleHotkeysArmed;
 window.triggerKillSwitch = triggerKillSwitch;
 window.rearmKillSwitch = rearmKillSwitch;
 
-// ---- Hotkey binding capture (configurable from Settings → Engine → Hotkeys) ----
+// ---- Hotkey binding capture (configurable from Settings ? Engine ? Hotkeys) ----
 let pendingCaptureAction = null;
 
 function labelForKey(descriptor) {
@@ -119,7 +119,7 @@ window.captureHotkey = function (btn) {
   pendingCaptureAction = action;
   window.__hotkeyCapturing = true;
   btn.classList.add('capturing');
-  btn.innerText = 'Press a key…';
+  btn.innerText = 'Press a key�';
 };
 
 window.resetHotkeyBindings = function () {
@@ -134,7 +134,7 @@ window.addEventListener('keydown', (e) => {
   if (!pendingCaptureAction) return;
   if (e.repeat) return; // ignore auto-repeat during rebind capture
   const descriptor = normalizeKeyEvent(e);
-  if (!descriptor) return; // pure modifier — keep listening
+  if (!descriptor) return; // pure modifier � keep listening
   e.preventDefault();
   e.stopPropagation();
   setBinding(pendingCaptureAction, descriptor);
@@ -190,7 +190,7 @@ window.toggleTopBar = function () {
   const collapsed = !document.body.classList.contains('bar-collapsed');
   document.body.classList.toggle('bar-collapsed', collapsed);
   const chev = document.getElementById('barChevron');
-  if (chev) chev.textContent = collapsed ? '▼' : '▲';
+  if (chev) chev.textContent = collapsed ? '?' : '?';
   try { localStorage.setItem('tradeEngine_bar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
 };
 
@@ -209,7 +209,7 @@ function applySavedBar() {
   try { collapsed = localStorage.getItem('tradeEngine_bar') === 'collapsed'; } catch (e) {}
   document.body.classList.toggle('bar-collapsed', collapsed);
   const chev = document.getElementById('barChevron');
-  if (chev) chev.textContent = collapsed ? '▼' : '▲';
+  if (chev) chev.textContent = collapsed ? '?' : '?';
 }
 
 // ---- Panel layout toggle: vertical side column vs horizontal top bar ----
