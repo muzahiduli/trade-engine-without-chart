@@ -1,4 +1,4 @@
-﻿package hub
+package hub
 
 import (
 	"encoding/json"
@@ -504,6 +504,7 @@ func (h *Hub) handleSetConfig(payload json.RawMessage) {
 		ScaleOutPercent          *float64 `json:"scaleOutPercent"`
 		ScaleOutTimeoutSeconds   *float64 `json:"scaleOutTimeoutSeconds"`
 		ScaleOutPriceMode        *string  `json:"scaleOutPriceMode"`
+		InstantEntryMode         *string  `json:"instantEntryMode"`
 	}
 	if err := json.Unmarshal(payload, &patch); err != nil {
 		return
@@ -747,8 +748,14 @@ func (h *Hub) handleSetConfig(payload json.RawMessage) {
 	}
 	if patch.ScaleOutPriceMode != nil {
 		switch *patch.ScaleOutPriceMode {
-		case "BarHighLow", "AskBid":
+		case "BarHighLow", "AskBid", "Candle1m":
 			h.State.ScaleOutPriceMode = *patch.ScaleOutPriceMode
+		}
+	}
+	if patch.InstantEntryMode != nil {
+		switch *patch.InstantEntryMode {
+		case "AskBid", "Market":
+			h.State.InstantEntryMode = *patch.InstantEntryMode
 		}
 	}
 

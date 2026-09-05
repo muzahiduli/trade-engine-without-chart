@@ -4,6 +4,9 @@
 //
 // Key bindings are user-configurable and stored in localStorage (client-side only —
 // the Go hub never sees the raw key, only the resolved ACTION string).
+//
+// NOTE: icon strings use \u escapes so the file stays pure-ASCII on disk —
+// the earlier emoji mojibake (?? boxes) came from encoding corruption.
 import { getState } from './state.js';
 import { sendHotkey } from './ws.js';
 
@@ -12,28 +15,18 @@ let flashTimer = null;
 // The canonical list of hotkey actions and their DEFAULT key descriptors.
 // descriptor format: "mod+key" e.g. "shift+f", "ctrl+space", or bare "s".
 export const HOTKEY_ACTIONS = [
-  { action: 'INSTANT_ENTRY', label: 'Instant Entry', defaultKey: 'shift+f', icon: '⚡' },
-  { action: 'BREAKOUT_ENTRY', label: 'Breakout Entry', defaultKey: 'shift+r', icon: '⚡' },
-  { action: 'TRAIL_STOP', label: 'Trail Stop', defaultKey: 'shift+s', icon: '🔒' },
-  { action: 'BREAKEVEN', label: 'Stop to Breakeven', defaultKey: 'b', icon: '🎯' },
-  { action: 'BREAKEVEN_PLUS', label: 'Stop to BE + Offset', defaultKey: 'shift+b', icon: '🎯' },
-  { action: 'CLOSE_25', label: 'Close 25%', defaultKey: 'ctrl+1', icon: '📊' },
-  { action: 'CLOSE_50', label: 'Close 50%', defaultKey: 'ctrl+2', icon: '📊' },
-  { action: 'CLOSE_RUNNER', label: 'Close Runner (100%)', defaultKey: 'ctrl+3', icon: '📊' },
-  { action: 'CANCEL_ENTRY', label: 'Cancel Entry Order', defaultKey: 'c', icon: '❌' },
-  { action: 'CANCEL_ORDERS', label: 'Cancel All Orders', defaultKey: 'shift+c', icon: '❌' },
-  { action: 'SWAP_DIRECTION', label: 'Swap Long/Short', defaultKey: 's', icon: '⇄' },
-  { action: 'SCALE_OUT', label: 'Scale Out', defaultKey: 'ctrl+f', icon: '📊' },
-  { action: 'FLATTEN', label: 'Flatten', defaultKey: 'ctrl+space', icon: '🛑' },
-  { action: 'KILL_SWITCH', label: 'Emergency Kill Switch', defaultKey: 'ctrl+shift+k', icon: '🚨' },
-  { action: 'SET_RR_1', label: 'Set RR 1:1', defaultKey: 'r', icon: '🎯' },
-  { action: 'TOGGLE_RISK', label: 'Toggle Risk Cash', defaultKey: 'q', icon: '💰' },
-  { action: 'AUTO_TRACK', label: 'Auto-Track Toggle', defaultKey: 'a', icon: '🎯' },
-  { action: 'CYCLE_TRACK_TF', label: 'Cycle Track Timeframe', defaultKey: 't', icon: '🕐' },
-  { action: 'LOCK_SL', label: 'Lock SL Toggle', defaultKey: 'l', icon: '🔒' },
+  { action: 'INSTANT_ENTRY', label: 'Instant Entry', defaultKey: 'shift+f', icon: '\u26a1' },          // ⚡
+  { action: 'BREAKEVEN', label: 'Stop to Breakeven', defaultKey: 'b', icon: '\u2192' },                  // →
+  { action: 'CLOSE_25', label: 'Close 25%', defaultKey: 'ctrl+1', icon: '\u25bc' },                      // ▼
+  { action: 'CLOSE_50', label: 'Close 50%', defaultKey: 'ctrl+2', icon: '\u25bc' },                      // ▼
+  { action: 'CANCEL_ENTRY', label: 'Cancel Working Entry', defaultKey: 'c', icon: '\u2715' },            // ✕
+  { action: 'SCALE_OUT', label: 'Scale Out', defaultKey: 'ctrl+f', icon: '\u2192' },                     // →
+  { action: 'FLATTEN', label: 'Flatten Position', defaultKey: 'ctrl+space', icon: '\u25a0' },            // ■
+  { action: 'TOGGLE_RISK', label: 'Toggle Risk Cash ($100\u2194$200)', defaultKey: 'q', icon: '\u00a4' }, // ¤
+  { action: 'LOCK_SL', label: 'Lock Stop Loss on/off', defaultKey: 'l', icon: '\u26d4' },                // ⛔
+  { action: 'STOP_AT_5M', label: 'Stop at 5m Candle + Entry at Market', defaultKey: 'r', icon: '\u2316' },// ⌖
+  { action: 'KILL_SWITCH', label: 'Emergency Kill Switch', defaultKey: 'ctrl+shift+k', icon: '\u26d4' },  // ⛔
 ];
-
-const TRACK_TFS = ['15s', '1m', '5m', '100t'];
 
 // Client-side hotkey actions (UI/model settings applied locally, then synced
 // to the hub via the same sendConfig path the buttons use). Actions NOT listed
@@ -43,13 +36,9 @@ const CLIENT_ACTIONS = {
   LOCK_SL: () => {
     if (typeof window.toggleLockSl === 'function') window.toggleLockSl();
   },
-  // Set R:R to 1:1 (same as pressing the 1:1 preset).
-  SET_RR_1: () => {
-    if (typeof window.setRR === 'function') window.setRR(1.0);
-  },
-  // Toggle Risk Cash between the two preset buttons marked data-risktoggle —
-  // default $100 ↔ $200. Configure the pair by editing those <option>-style
-  // values on the two buttons in index.html (data-value attributes).
+  // Toggle Risk Cash between the two preset buttons marked data-risktoggle a/b
+  // (default $100 <-> $200). Configure the pair by editing those data-value
+  // attributes in index.html.
   TOGGLE_RISK: () => {
     const elA = document.querySelector('[data-risktoggle="a"]');
     const elB = document.querySelector('[data-risktoggle="b"]');
@@ -61,20 +50,6 @@ const CLIENT_ACTIONS = {
     const cur = state && state.riskCash;
     const target = (cur === a) ? b : a;
     if (typeof window.setRiskCash === 'function') window.setRiskCash(target);
-  },
-  // Flip Auto-Track on/off (same as the button).
-  AUTO_TRACK: () => {
-    if (typeof window.toggleAutoTrack === 'function') window.toggleAutoTrack();
-  },
-  // Cycle the engine's tracking timeframe: 15s → 1m → 5m → 100t → 15s.
-  CYCLE_TRACK_TF: () => {
-    const state = getState();
-    const cur = (state && state.trackTimeframe) || '15s';
-    const idx = TRACK_TFS.indexOf(cur);
-    const next = TRACK_TFS[(idx + 1) % TRACK_TFS.length];
-    const sel = document.getElementById('trackTfSelect');
-    if (sel) sel.value = next;
-    if (typeof window.onTrackTfChanged === 'function') window.onTrackTfChanged(next);
   },
 };
 
@@ -220,7 +195,7 @@ function onKeyDown(e) {
   }
 
   // Execution arming guard
-  const isExecAction = (action === 'INSTANT_ENTRY' || action === 'BREAKOUT_ENTRY');
+  const isExecAction = (action === 'INSTANT_ENTRY');
   if (isExecAction && state.hotkeysArmed === false) {
     e.preventDefault();
     e.stopPropagation();
@@ -236,7 +211,7 @@ function onKeyDown(e) {
   const label = def ? `${def.icon} ${descriptor.toUpperCase()} → ${def.label.toUpperCase()}` : action;
   showHotkeyToast(label);
 
-  // Client-side actions (RR preset, size toggle) never leave the browser.
+  // Client-side actions (size toggle, locks) never leave the browser.
   const clientFn = CLIENT_ACTIONS[action];
   if (clientFn) {
     clientFn();

@@ -84,12 +84,27 @@ body.bar-collapsed #barChevron {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .top-bar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* In horizontal-bar mode (layout-horizontal), the top bar should also allow
+   the header row to grow/wrap so tools never clip when the window is short. */
+.top-bar {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .brand-text {

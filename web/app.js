@@ -1,4 +1,4 @@
-// Trade Engine Command Center � Main Application Entry Point
+// Trade Engine Command Center — Main Application Entry Point
 // No charts, no overlay: this is the execution/risk control panel only.
 // The SL/TP/entry lines live on the NinjaTrader chart (LineHost drawing tool)
 // and the engine is authoritative for all logic.
@@ -119,7 +119,7 @@ window.captureHotkey = function (btn) {
   pendingCaptureAction = action;
   window.__hotkeyCapturing = true;
   btn.classList.add('capturing');
-  btn.innerText = 'Press a key�';
+  btn.innerText = 'Press a key—';
 };
 
 window.resetHotkeyBindings = function () {
@@ -134,7 +134,7 @@ window.addEventListener('keydown', (e) => {
   if (!pendingCaptureAction) return;
   if (e.repeat) return; // ignore auto-repeat during rebind capture
   const descriptor = normalizeKeyEvent(e);
-  if (!descriptor) return; // pure modifier � keep listening
+  if (!descriptor) return; // pure modifier — keep listening
   e.preventDefault();
   e.stopPropagation();
   setBinding(pendingCaptureAction, descriptor);

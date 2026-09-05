@@ -137,6 +137,7 @@ func NewHub() *Hub {
 			ScaleOutPercent:          50.0,
 			ScaleOutTimeoutSeconds:   2.5,
 			ScaleOutPriceMode:        "BarHighLow",
+			InstantEntryMode:         "AskBid",
 			TargetExits: []risk.TargetExit{
 				{Qty: 1, Ratio: 2.0, Price: 20040.0},
 			},

@@ -131,11 +131,14 @@ type TradeState struct {
 	// (toggled with plain 'L' in NinjaTrader; reported via HOTKEY_STATUS).
 	HotkeyForwardingEnabled bool `json:"hotkeyForwardingEnabled"`
 	InstantEntryOffsetTicks  int     `json:"instantEntryOffsetTicks"`
+	InstantEntryMode         string  `json:"instantEntryMode"` // "AskBid" (buy ask/sell bid) or "Market"
 	BreakoutEntryOffsetTicks int     `json:"breakoutEntryOffsetTicks"`
 	TrailStopOffsetTicks     int     `json:"trailStopOffsetTicks"`
 	ScaleOutPercent          float64 `json:"scaleOutPercent"`
 	ScaleOutTimeoutSeconds   float64 `json:"scaleOutTimeoutSeconds"`
-	ScaleOutPriceMode        string  `json:"scaleOutPriceMode"` // "BarHighLow" (default) or "AskBid"
+	// ScaleOutPriceMode: "BarHighLow" (tracking bar H/L), "AskBid" (sell bid/buy
+	// ask), "Candle1m" (current 1m candle H/L).
+	ScaleOutPriceMode string `json:"scaleOutPriceMode"`
 
 	// Calculated Outputs (Engine Computes)
 	CalculatedQty      int          `json:"calculatedQty"`

@@ -9,7 +9,7 @@ export function renderUI() {
 
   const inPos = isInPosition();
   // Go owns ALL derived trading math (see risk.RecalculateState): qty, risk,
-  // reward and R:R are broadcast in SYNC_STATE and rendered verbatim � the UI
+  // reward and R:R are broadcast in SYNC_STATE and rendered verbatim — the UI
   // never recomputes them (client recomputation drifted from the engine and
   // showed wrong HUD numbers / execute sizes).
   const qty = inPos ? (state.position?.quantity || 0) : (state.calculatedQty || 1);
@@ -185,7 +185,7 @@ export function renderUI() {
   }
 
   // 4. Auto Order Type Resolution Display (decision computed by Go's
-  // BuildExecutionPlan / RecalculateState � the UI just renders it)
+  // BuildExecutionPlan / RecalculateState — the UI just renders it)
   const autoBadge = document.getElementById('autoOrderTypeBadge');
   if (autoBadge) {
     const isBreakout = state.isBreakout === true;
@@ -235,26 +235,6 @@ export function renderUI() {
     btnLockSl.innerText = state.isSlLocked ? '?? Lock SL: ON' : '?? Lock SL: OFF';
   }
 
-  const btnAutoTrack = document.getElementById('btnAutoTrack');
-  if (btnAutoTrack) {
-    btnAutoTrack.className = state.isAutoTrackEnabled ? 'btn active' : 'btn';
-    btnAutoTrack.innerText = state.isAutoTrackEnabled ? '?? Auto-Track: ON' : '?? Auto-Track: OFF';
-  }
-
-  // Sync tracking controls (anchor / track timeframe / offset) from hub state.
-  const anchorSel = document.getElementById('trackAnchorSelect');
-  if (anchorSel && state.trackAnchor && document.activeElement !== anchorSel) {
-    anchorSel.value = state.trackAnchor;
-  }
-  const tfSel = document.getElementById('trackTfSelect');
-  if (tfSel && state.trackTimeframe && document.activeElement !== tfSel) {
-    tfSel.value = state.trackTimeframe;
-  }
-  const offsetInput = document.getElementById('trackOffsetInput');
-  if (offsetInput && document.activeElement !== offsetInput && state.trackOffsetTicks !== undefined) {
-    offsetInput.value = String(state.trackOffsetTicks);
-  }
-
   const quickSlPad = document.getElementById('quickSlPad');
   if (quickSlPad && document.activeElement !== quickSlPad) {
     quickSlPad.value = (state.slippagePadTicks || 0).toFixed(1);
@@ -298,6 +278,8 @@ export function renderUI() {
   if (elEnableHotkeys && document.activeElement !== elEnableHotkeys) elEnableHotkeys.checked = state.enableHotkeys !== false;
   const elInstantOffset = document.getElementById('settingInstantEntryOffsetTicks');
   if (elInstantOffset && document.activeElement !== elInstantOffset) elInstantOffset.value = state.instantEntryOffsetTicks ?? 2;
+  const elInstantMode = document.getElementById('settingInstantEntryMode');
+  if (elInstantMode && document.activeElement !== elInstantMode) elInstantMode.value = state.instantEntryMode || 'AskBid';
   const elBreakoutOffset = document.getElementById('settingBreakoutEntryOffsetTicks');
   if (elBreakoutOffset && document.activeElement !== elBreakoutOffset) elBreakoutOffset.value = state.breakoutEntryOffsetTicks ?? 1;
   const elTrailOffset = document.getElementById('settingTrailStopOffsetTicks');
@@ -443,40 +425,6 @@ export function toggleShowLines() {
   if (state) sendConfig({ showLines: !state.showLines });
 }
 
-export function toggleAutoTrack() {
-  const state = getState();
-  if (!state) return;
-  const nextVal = !state.isAutoTrackEnabled;
-  // Optimistic local update so the button flips immediately (SYNC_STATE
-  // round-trip re-syncs it anyway a moment later).
-  patchState({ isAutoTrackEnabled: nextVal });
-  const btn = document.getElementById('btnAutoTrack');
-  if (btn) {
-    btn.className = nextVal ? 'btn active' : 'btn';
-    btn.innerText = nextVal ? '?? Auto-Track: ON' : '?? Auto-Track: OFF';
-  }
-  sendConfig({ isAutoTrackEnabled: nextVal });
-}
-
-// Which bar the AutoTrack anchor uses: prior (closed) bar vs current bar vs 20-EMA.
-export function onTrackAnchorChanged(val) {
-  if (!val) return;
-  sendConfig({ trackAnchor: val });
-}
-
-// Which bar SERIES AutoTrack anchors on (15s/1m/5m/100t), independent of the
-// timeframes the chart panes display.
-export function onTrackTfChanged(val) {
-  if (!val) return;
-  sendConfig({ trackTimeframe: val });
-}
-
-export function onTrackOffsetChanged(val) {
-  const ticks = parseInt(val, 10);
-  if (isNaN(ticks)) return;
-  sendConfig({ trackOffsetTicks: ticks });
-}
-
 export function onAccountChanged(accName) {
   if (!accName) return;
   try { localStorage.setItem('tradeEngine_defaultAccount', accName); } catch (e) {}
@@ -612,6 +560,8 @@ export function applyEngineSettings() {
   if (enableHotkeys) cfg.enableHotkeys = enableHotkeys.checked;
   const instantOffset = document.getElementById('settingInstantEntryOffsetTicks');
   if (instantOffset) cfg.instantEntryOffsetTicks = parseInt(instantOffset.value, 10) || 0;
+  const instantMode = document.getElementById('settingInstantEntryMode');
+  if (instantMode && instantMode.value) cfg.instantEntryMode = instantMode.value;
   const breakoutOffset = document.getElementById('settingBreakoutEntryOffsetTicks');
   if (breakoutOffset) cfg.breakoutEntryOffsetTicks = parseInt(breakoutOffset.value, 10) || 0;
   const trailOffset = document.getElementById('settingTrailStopOffsetTicks');

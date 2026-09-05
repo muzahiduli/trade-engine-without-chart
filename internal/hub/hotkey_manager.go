@@ -1,4 +1,4 @@
-﻿package hub
+package hub
 
 import (
 	"encoding/json"
@@ -87,6 +87,8 @@ func (h *Hub) HandleHotkey(action string) {
 		h.cancelOrdersOnly()
 	case "FLATTEN":
 		h.hotkeyFlatten()
+	case "STOP_AT_5M":
+		h.hotkeyStopAt5mCandle()
 	case "KILL_SWITCH":
 		h.emergencyKillSwitch()
 	default:
@@ -211,6 +213,10 @@ func (h *Hub) hotkeyInstantEntry() {
 	if tick <= 0 {
 		tick = 0.25
 	}
+	mode := h.State.InstantEntryMode
+	if mode == "" {
+		mode = "AskBid"
+	}
 	ref := h.tickReference()
 	if ref <= 0 {
 		h.Mu.Unlock()
@@ -218,6 +224,25 @@ func (h *Hub) hotkeyInstantEntry() {
 		return
 	}
 	goLong := h.State.IsLong
+	dir := "BUY"
+	if !goLong {
+		dir = "SELL_SHORT"
+	}
+
+	// MARKET mode: submit a market order at the live market reference. No
+	// offset pricing; fills at whatever the broker does.
+	if mode == "Market" {
+		entry := ref
+		h.State.EntryPrice = risk.RoundToTickSize(entry, tick)
+		risk.RecalculateState(h.State)
+		h.Mu.Unlock()
+		h.submitEntryMarket("GoEntry")
+		h.flashHotkeyStatus(fmt.Sprintf("Instant %s MARKET entry @ %.2f", dir, entry))
+		return
+	}
+
+	// AskBid mode (default): marketable LIMIT at Ask+N ticks (long) / Bid-N
+	// ticks (short) — same as the original behavior.
 	offsetTicks := h.State.InstantEntryOffsetTicks
 	if h.State.MaxEntrySlippageTicks > 0 && offsetTicks > h.State.MaxEntrySlippageTicks {
 		offsetTicks = h.State.MaxEntrySlippageTicks
@@ -238,11 +263,7 @@ func (h *Hub) hotkeyInstantEntry() {
 	h.Mu.Unlock()
 
 	h.submitEntryLimit("GoEntry", entry)
-	dir := "BUY"
-	if !goLong {
-		dir = "SELL_SHORT"
-	}
-	h.flashHotkeyStatus(fmt.Sprintf("âš¡ Instant %s entry @ %.2f", dir, entry))
+	h.flashHotkeyStatus(fmt.Sprintf("Instant %s entry @ %.2f", dir, entry))
 }
 
 // submitEntryLimit sends a LIMIT GoEntry at `limitPrice` â€” instant entries are
@@ -297,6 +318,61 @@ func (h *Hub) submitEntryLimit(orderName string, limitPrice float64) {
 		Price:          limitPrice,
 		Success:        true,
 		Details:        "Instant marketable limit entry submitted",
+	})
+	go h.BroadcastState()
+}
+
+// submitEntryMarket sends a MARKET GoEntry — used by the instant-entry hotkey
+// when InstantEntryMode == "Market". Brackets are assembled by the hub on fill
+// exactly as for any other entry.
+func (h *Hub) submitEntryMarket(orderName string) {
+	h.freezeAutoTrackOnEntry()
+	h.cancelUnfilledEntryOrders()
+
+	h.Mu.RLock()
+	acc := h.State.SelectedAccount
+	if acc == "" {
+		acc = h.State.AccountName
+	}
+	inst := h.State.InstrumentName
+	qty := h.State.CalculatedQty
+	if qty <= 0 {
+		qty = 1
+	}
+	action := "BUY"
+	if !h.State.IsLong {
+		action = "SELL_SHORT"
+	}
+	h.Mu.RUnlock()
+
+	cmd := risk.SingleOrderCmd{
+		AccountName: acc,
+		Instrument:  inst,
+		Action:      action,
+		OrderType:   "Market",
+		Qty:         qty,
+		LimitPrice:  0,
+		StopPrice:   0,
+		OcoId:       "",
+		Name:        orderName,
+	}
+	bytes, err := json.Marshal(cmd)
+	if err != nil {
+		h.flashHotkeyStatus("Hotkey: instant market entry marshal failed")
+		return
+	}
+	log.Printf("Hotkey: Submitting %s MARKET entry to NT8: %s", action, string(bytes))
+	go h.ForwardToNT8("SUBMIT_ORDER", bytes)
+	go logging.RecordAudit(logging.AuditEvent{
+		EventType:      "HOTKEY",
+		AccountName:    acc,
+		InstrumentName: inst,
+		Action:         action,
+		OrderType:      "Market",
+		Qty:            qty,
+		Price:          0,
+		Success:        true,
+		Details:        "Instant market entry order submitted",
 	})
 	go h.BroadcastState()
 }
@@ -537,12 +613,20 @@ func (h *Hub) hotkeyScaleOut(pct float64) {
 			limitPrice = risk.RoundToTickSize(h.usableAsk(), tick)
 		}
 	} else {
-		if len(bars) < 1 {
+		// "BarHighLow" (default) uses the tracking bar (usually 15s);
+		// "Candle1m" uses the current 1m candle high/low.
+		var src []risk.ChartBar
+		if priceMode == "Candle1m" {
+			src = h.TimeframeBars["1m"]
+		} else {
+			src = bars
+		}
+		if len(src) < 1 {
 			h.Mu.Unlock()
 			h.flashHotkeyStatus("Hotkey ignored: no bar data for scale-out pricing")
 			return
 		}
-		curBar := bars[len(bars)-1]
+		curBar := src[len(src)-1]
 		if isLong {
 			limitPrice = risk.RoundToTickSize(curBar.High, tick)
 		} else {
@@ -742,5 +826,58 @@ func (h *Hub) hotkeyFlatten() {
 		Action:         "FLATTEN",
 		Success:        true,
 		Details:        "Hotkey flatten command routed to NT8",
+	})
+}
+
+// hotkeyStopAt5mCandle — the R hotkey: set the stop loss below the low of the
+// current 5m candle (long) / above the high (short), and set the entry line to
+// the current market price. This only moves PLAN lines (state) — the user then
+// executes normally; brackets are assembled on fill as usual.
+func (h *Hub) hotkeyStopAt5mCandle() {
+	h.Mu.Lock()
+	tick := h.State.TickSize
+	if tick <= 0 {
+		tick = 0.25
+	}
+	bars := h.TimeframeBars["5m"]
+	if len(bars) < 1 {
+		h.Mu.Unlock()
+		h.flashHotkeyStatus("Hotkey ignored: no 5m bar data")
+		return
+	}
+	goLong := h.State.IsLong
+	market := h.State.CurrentMarketPrice
+	if market <= 0 {
+		market = h.State.LastPrice
+	}
+	if market <= 0 {
+		market = h.tickReference()
+	}
+	if market <= 0 {
+		h.Mu.Unlock()
+		h.flashHotkeyStatus("Hotkey ignored: no market reference")
+		return
+	}
+	curBar := bars[len(bars)-1]
+	var stop float64
+	if goLong {
+		stop = risk.RoundToTickSize(curBar.Low-tick, tick)
+	} else {
+		stop = risk.RoundToTickSize(curBar.High+tick, tick)
+	}
+	h.State.EntryPrice = risk.RoundToTickSize(market, tick)
+	h.State.StopPrice = stop
+	risk.RecalculateState(h.State)
+	h.Mu.Unlock()
+
+	go h.BroadcastState()
+	h.flashHotkeyStatus(fmt.Sprintf("R: entry @ %.2f, stop @ %.2f (5m candle)", h.State.EntryPrice, stop))
+	go logging.RecordAudit(logging.AuditEvent{
+		EventType:      "HOTKEY",
+		AccountName:    h.State.AccountName,
+		InstrumentName: h.State.InstrumentName,
+		Action:         "STOP_AT_5M",
+		Success:        true,
+		Details:        fmt.Sprintf("Entry=%.2f Stop=%.2f from 5m candle low/high", h.State.EntryPrice, stop),
 	})
 }

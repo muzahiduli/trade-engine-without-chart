@@ -72,22 +72,19 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             bindings.Clear();
             bindings["INSTANT_ENTRY"]   = new HotkeyBinding("INSTANT_ENTRY",   false, true,  false, VK_F);
-            bindings["BREAKOUT_ENTRY"]  = new HotkeyBinding("BREAKOUT_ENTRY",  false, true,  false, VK_R);
-            bindings["TRAIL_STOP"]      = new HotkeyBinding("TRAIL_STOP",      false, true,  false, VK_S);
             bindings["BREAKEVEN"]       = new HotkeyBinding("BREAKEVEN",       false, false, false, VK_B);
-            bindings["BREAKEVEN_PLUS"]  = new HotkeyBinding("BREAKEVEN_PLUS",  false, true,  false, VK_B);
             bindings["CLOSE_25"]        = new HotkeyBinding("CLOSE_25",        true,  false, false, (byte)'1');
             bindings["CLOSE_50"]        = new HotkeyBinding("CLOSE_50",        true,  false, false, (byte)'2');
-            bindings["CLOSE_RUNNER"]    = new HotkeyBinding("CLOSE_RUNNER",    true,  false, false, (byte)'3');
             bindings["CANCEL_ENTRY"]    = new HotkeyBinding("CANCEL_ENTRY",    false, false, false, VK_C);
-            bindings["CANCEL_ORDERS"]   = new HotkeyBinding("CANCEL_ORDERS",   false, true,  false, VK_C);
-            bindings["SWAP_DIRECTION"]  = new HotkeyBinding("SWAP_DIRECTION",  false, false, false, VK_S);
             bindings["SCALE_OUT"]       = new HotkeyBinding("SCALE_OUT",       true,  false, false, VK_F);
             bindings["FLATTEN"]         = new HotkeyBinding("FLATTEN",         true,  false, false, VK_SPACE);
+            bindings["STOP_AT_5M"]      = new HotkeyBinding("STOP_AT_5M",      false, false, false, VK_R);
+            bindings["TOGGLE_RISK"]     = new HotkeyBinding("TOGGLE_RISK",     false, false, false, VK_Q);
+            bindings["LOCK_SL"]         = new HotkeyBinding("LOCK_SL",         false, false, false, VK_L);
             bindings["KILL_SWITCH"]     = new HotkeyBinding("KILL_SWITCH",     true,  true,  false, VK_K);
         }
 
-        private const byte VK_F = 0x46, VK_R = 0x52, VK_S = 0x53, VK_B = 0x42, VK_C = 0x43, VK_K = 0x4B, VK_L = 0x4C, VK_SPACE = 0x20;
+        private const byte VK_F = 0x46, VK_R = 0x52, VK_B = 0x42, VK_C = 0x43, VK_K = 0x4B, VK_L = 0x4C, VK_Q = 0x51, VK_SPACE = 0x20;
 
         // Diagnostic breadcrumb so failures are visible without UI automation.
         private static string CrumbPath

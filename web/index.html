@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Engine Command Center</title>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <!-- Emergency Kill Switch Banner -->
@@ -191,35 +191,9 @@
       <div class="panel" style="margin-bottom: 10px;">
         <div class="panel-title" style="margin-bottom: 6px;">Tracking & Stop Guards</div>
         
-        <!-- Auto-Track and Lock SL in Main Bar -->
+        <!-- Lock Stop Loss in Main Bar -->
         <div class="btn-group" style="margin-bottom: 6px;">
-          <button id="btnAutoTrack" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleAutoTrack()">🎯 Auto-Track: OFF</button>
           <button id="btnLockSl" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleLockSl()">🔓 Lock SL: OFF</button>
-        </div>
-
-        <!-- Tracking Timeframe: which bar series AutoTrack anchors on
-             (regardless of which timeframe the chart panes display) -->
-        <div class="input-row" style="margin-bottom: 6px;">
-          <label class="input-label" style="font-size: 11px;">Track TF:</label>
-          <select id="trackTfSelect" class="input-field" style="font-size: 11px; padding: 3px 6px;" onchange="onTrackTfChanged(this.value)">
-            <option value="15s">15s</option>
-            <option value="1m">1m</option>
-            <option value="5m">5m</option>
-            <option value="100t">100t</option>
-          </select>
-          <span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">anchor series for Auto-Track</span>
-        </div>
-
-        <!-- Anchor & Offset in Main Bar -->
-        <div class="input-row" style="margin-bottom: 6px;">
-          <label class="input-label" style="font-size: 11px;">Anchor:</label>
-          <select id="trackAnchorSelect" class="input-field" style="font-size: 11px; padding: 3px 6px;" onchange="onTrackAnchorChanged(this.value)">
-            <option value="PriorHighLow">Prior Bar H/L</option>
-            <option value="CurrentBarHighLow">Current Bar H/L</option>
-          </select>
-
-          <label class="input-label" style="width: auto; margin-left: 8px; font-size: 11px;">Offset:</label>
-          <input type="number" id="trackOffsetInput" class="input-field" style="width: 55px; font-size: 11px; padding: 3px 6px;" value="0" step="1" onchange="onTrackOffsetChanged(this.value)">
         </div>
 
         <!-- Quick Toggles -->
@@ -284,7 +258,7 @@
         <!-- Content Panels -->
         <div class="tv-settings-content">
           
-          <!-- Engine & Risk configuration (only tab � no charts) -->
+          <!-- Engine & Risk configuration (only tab — no charts) -->
           <div id="tvTabContentEngine" style="display: flex; flex-direction: column; gap: 14px;">
             <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px;">Slippage & Stop Padding</div>
             <div class="tv-setting-row">
@@ -383,23 +357,16 @@
             </div>
             <div style="font-size: 11px; color: #9aa2b5; margin-top: -6px; margin-bottom: 4px;">Click a key below, then press the new key combo to rebind it (or Backspace to clear).</div>
             <div class="tv-setting-row"><span class="tv-setting-label">Instant Entry:</span><button type="button" class="btn hotkey-capture" data-action="INSTANT_ENTRY" onclick="captureHotkey(this)">Shift+F</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Breakout Entry:</span><button type="button" class="btn hotkey-capture" data-action="BREAKOUT_ENTRY" onclick="captureHotkey(this)">Shift+R</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Trail Stop:</span><button type="button" class="btn hotkey-capture" data-action="TRAIL_STOP" onclick="captureHotkey(this)">Shift+S</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Stop to Breakeven:</span><button type="button" class="btn hotkey-capture" data-action="BREAKEVEN" onclick="captureHotkey(this)">B</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Stop to BE + Offset:</span><button type="button" class="btn hotkey-capture" data-action="BREAKEVEN_PLUS" onclick="captureHotkey(this)">Shift+B</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Close 25%:</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_25" onclick="captureHotkey(this)">Ctrl+1</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Close 50%:</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_50" onclick="captureHotkey(this)">Ctrl+2</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Close Runner (100%):</span><button type="button" class="btn hotkey-capture" data-action="CLOSE_RUNNER" onclick="captureHotkey(this)">Ctrl+3</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Cancel Entry Order:</span><button type="button" class="btn hotkey-capture" data-action="CANCEL_ENTRY" onclick="captureHotkey(this)">C</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Cancel All Orders:</span><button type="button" class="btn hotkey-capture" data-action="CANCEL_ORDERS" onclick="captureHotkey(this)">Shift+C</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Swap Long/Short:</span><button type="button" class="btn hotkey-capture" data-action="SWAP_DIRECTION" onclick="captureHotkey(this)">S</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Scale Out:</span><button type="button" class="btn hotkey-capture" data-action="SCALE_OUT" onclick="captureHotkey(this)">Ctrl+F</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Flatten:</span><button type="button" class="btn hotkey-capture" data-action="FLATTEN" onclick="captureHotkey(this)">Ctrl+Space</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Emergency Kill Switch:</span><button type="button" class="btn hotkey-capture" data-action="KILL_SWITCH" onclick="captureHotkey(this)">Ctrl+Shift+K</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Set RR 1:1:</span><button type="button" class="btn hotkey-capture" data-action="SET_RR_1" onclick="captureHotkey(this)">R</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Stop at 5m Candle + Entry at Market:</span><button type="button" class="btn hotkey-capture" data-action="STOP_AT_5M" onclick="captureHotkey(this)">R</button></div>
             <div class="tv-setting-row"><span class="tv-setting-label">Toggle Risk Cash:</span><button type="button" class="btn hotkey-capture" data-action="TOGGLE_RISK" onclick="captureHotkey(this)">Q</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Auto-Track On/Off:</span><button type="button" class="btn hotkey-capture" data-action="AUTO_TRACK" onclick="captureHotkey(this)">A</button></div>
-            <div class="tv-setting-row"><span class="tv-setting-label">Cycle Track Timeframe:</span><button type="button" class="btn hotkey-capture" data-action="CYCLE_TRACK_TF" onclick="captureHotkey(this)">T</button></div>
+            <div class="tv-setting-row"><span class="tv-setting-label">Lock SL On/Off:</span><button type="button" class="btn hotkey-capture" data-action="LOCK_SL" onclick="captureHotkey(this)">L</button></div>
             <div class="tv-setting-row">
               <span class="tv-setting-label"></span>
               <button type="button" class="btn" onclick="resetHotkeyBindings()">Reset to defaults</button>
@@ -407,6 +374,13 @@
             <div class="tv-setting-row">
               <span class="tv-setting-label">Instant Entry Offset (Ticks):</span>
               <input type="number" id="settingInstantEntryOffsetTicks" class="input-field" style="width: 70px;" step="1" min="0" value="2" onchange="applyEngineSettings()">
+            </div>
+            <div class="tv-setting-row">
+              <span class="tv-setting-label">Instant Entry Mode:</span>
+              <select id="settingInstantEntryMode" class="input-field" style="width: 160px;" onchange="applyEngineSettings()">
+                <option value="AskBid">Bid/Ask limit (buy ask / sell bid)</option>
+                <option value="Market">Market order</option>
+              </select>
             </div>
             <div class="tv-setting-row">
               <span class="tv-setting-label">Breakout Entry Offset (Ticks):</span>
@@ -426,8 +400,9 @@
             </div>
             <div class="tv-setting-row">
               <span class="tv-setting-label">Scale Out Price Mode:</span>
-              <select id="settingScaleOutPriceMode" class="input-field" style="width: 120px;" onchange="applyEngineSettings()">
-                <option value="BarHighLow">Bar High/Low</option>
+              <select id="settingScaleOutPriceMode" class="input-field" style="width: 160px;" onchange="applyEngineSettings()">
+                <option value="BarHighLow">Current bar High/Low</option>
+                <option value="Candle1m">Current 1m candle H/L</option>
                 <option value="AskBid">Live Ask/Bid</option>
               </select>
             </div>
@@ -453,29 +428,21 @@
       <button onclick="toggleHotkeysPanel()" style="background: none; border: none; color: #9aa2b5; cursor: pointer; font-size: 14px;">✕</button>
     </div>
     <table style="border-collapse: collapse;">
-      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+F</td><td>Instant entry (marketable limit)</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+R</td><td>Breakout entry (trigger stop)</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Shift+S</td><td>Trail stop (tighten to swing)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+F</td><td>Instant entry (mode selectable: Bid/Ask limit or Market)</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">B</td><td>Stop to Breakeven (entry price)</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+B</td><td>Stop to BE + Offset</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+1</td><td>Close 25% of position</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+2</td><td>Close 50% of position</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+3</td><td>Close Runner (100% flat)</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">C</td><td>Cancel Working Entry Order</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">Shift+C</td><td>Cancel All Orders</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">S</td><td>Swap Long / Short</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+F</td><td>Scale Out</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+F</td><td>Scale Out (mode selectable: bar H/L, 1m candle, or Bid/Ask)</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">Ctrl+Space</td><td>Flatten Position</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ff4757; font-weight: 700;">Ctrl+Shift+K</td><td>🚨 Emergency Kill Switch</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">Q</td><td>Toggle risk cash ($100 ↔ $200)</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">R</td><td>Set R:R to 1:1</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">A</td><td>Auto-Track on/off</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">T</td><td>Cycle Track Timeframe (15s→1m→5m→100t)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">R</td><td>Stop at current 5m candle low (long) / high (short) + entry at market</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">L</td><td>Lock Stop Loss on/off</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff4757; font-weight: 700;">Ctrl+Shift+K</td><td>🚨 Emergency Kill Switch</td></tr>
     </table>
   </div>
 
-  <script type="module" src="app.js?v=119"></script>
+  <script type="module" src="app.js?v=120"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');
