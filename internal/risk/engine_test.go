@@ -249,12 +249,16 @@ func TestRecalculateState_ShortWithPartial(t *testing.T) {
 	if state.TargetPrice >= state.EntryPrice {
 		t.Errorf("Expected short TargetPrice < EntryPrice, got %.2f >= %.2f", state.TargetPrice, state.EntryPrice)
 	}
-	if len(state.TargetExits) < 2 {
-		t.Fatalf("Expected at least 2 partial exits, got %d", len(state.TargetExits))
+	if len(state.TargetExits) < 1 {
+		t.Fatalf("Expected at least 1 target exit, got %d", len(state.TargetExits))
 	}
 	for i, exit := range state.TargetExits {
 		if exit.Price >= state.EntryPrice {
 			t.Errorf("TargetExit[%d] price %.2f should be below EntryPrice %.2f for short", i, exit.Price, state.EntryPrice)
+		}
+		// User rule: no exit above 25% of position (5 qty -> cap 1).
+		if exit.Qty > 1 {
+			t.Errorf("TargetExit[%d] qty %d exceeds 25%% cap for 5-contract position", i, exit.Qty)
 		}
 	}
 }
@@ -266,15 +270,38 @@ func TestGetTargetExits_CustomPreserved(t *testing.T) {
 		{Ratio: 4.0, Qty: 1, Price: 20080.0},
 	}
 
+	// User rule: any exit above 25% of the position is dropped entirely.
+	// TotalQty=5 -> cap = round(5*0.25) = 1 -> the qty-2 exits are removed,
+	// only the qty-1 (furthest) exit survives.
 	exits := GetTargetExits(5, 20000.0, 20.0, 2.0, true, 0.33, 0.50, true, 0.25, true, customExits)
-	if len(exits) != 3 {
-		t.Fatalf("Expected 3 custom exits preserved, got %d", len(exits))
+	if len(exits) != 1 {
+		t.Fatalf("Expected 1 exit after >25%% cap (5 qty -> cap 1), got %d", len(exits))
 	}
-	if exits[0].Ratio != 1.2 || exits[1].Ratio != 2.5 || exits[2].Ratio != 4.0 {
-		t.Errorf("Expected custom ratios 1.2, 2.5, 4.0, got %.2f, %.2f, %.2f", exits[0].Ratio, exits[1].Ratio, exits[2].Ratio)
+	if exits[0].Qty != 1 {
+		t.Errorf("Expected surviving exit qty 1, got %d", exits[0].Qty)
 	}
-	if exits[0].Price != 20024.0 || exits[1].Price != 20050.0 || exits[2].Price != 20080.0 {
-		t.Errorf("Expected prices 20024, 20050, 20080, got %.2f, %.2f, %.2f", exits[0].Price, exits[1].Price, exits[2].Price)
+	if exits[0].Ratio != 4.0 || exits[0].Price != 20080.0 {
+		t.Errorf("Expected furthest exit ratio 4.0 @ 20080, got %.2f @ %.2f", exits[0].Ratio, exits[0].Price)
+	}
+}
+
+func TestGetTargetExits_UnderCapUntouched(t *testing.T) {
+	// Rebuild with totalQty=4 generates exit qtys ~[1,2,1]; the 25% cap
+	// (round(4*0.25)=1) drops the qty-2 middle exit, leaving the 2 sub-25%
+	// exits intact.
+	customExits := []TargetExit{
+		{Ratio: 1.0, Qty: 1, Price: 20020.0},
+		{Ratio: 2.0, Qty: 1, Price: 20040.0},
+		{Ratio: 3.0, Qty: 1, Price: 20060.0},
+	}
+	exits := GetTargetExits(4, 20000.0, 20.0, 2.0, true, 0.33, 0.50, true, 0.25, true, customExits)
+	if len(exits) != 2 {
+		t.Fatalf("Expected 2 exits kept after 25%% cap (4 qty -> cap 1), got %d", len(exits))
+	}
+	for i, e := range exits {
+		if e.Qty > 1 {
+			t.Errorf("Exit[%d] qty %d exceeds 25%% cap", i, e.Qty)
+		}
 	}
 }
 

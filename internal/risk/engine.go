@@ -228,16 +228,34 @@ func GetTargetExits(totalQty int, entry, slDist, selectedRR float64, isPartialPr
 	if hasCustom && len(existingExits) == len(exits) && slDist > 0 {
 		for i := range exits {
 			exits[i].Ratio = existingExits[i].Ratio
-			// Preserve the user's exit QUANTITY structure (e.g. 25/50/75) —
-			// tracking/stop-guard re-anchors must never collapse it.
-			if existingExits[i].Qty > 0 {
-				exits[i].Qty = existingExits[i].Qty
-			}
 			if isLong {
 				exits[i].Price = RoundToTickSize(entry+exits[i].Ratio*slDist, tickSize)
 			} else {
 				exits[i].Price = RoundToTickSize(entry-exits[i].Ratio*slDist, tickSize)
 			}
+		}
+	}
+
+	// Cap: any single target exit above 25% of the position is dropped
+	// entirely (user preference). The uncovered remainder gets no TP target of
+	// its own — e.g. 4 contracts with exits 2/1/1 becomes 1/1 only.
+	maxExitQty := int(math.Round(float64(totalQty) * 0.25))
+	if maxExitQty < 1 {
+		maxExitQty = 1
+	}
+	if len(exits) > 1 {
+		kept := exits[:0]
+		for _, e := range exits {
+			if e.Qty <= maxExitQty {
+				kept = append(kept, e)
+			}
+		}
+		if len(kept) > 0 {
+			exits = kept
+		} else if len(exits) > 0 {
+			// Everything was above 25% — keep only the last (furthest) exit so
+			// the plan still has a target rather than none at all.
+			exits = exits[len(exits)-1:]
 		}
 	}
 
