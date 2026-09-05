@@ -1,22 +1,22 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Engine Command Center</title>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <!-- Emergency Kill Switch Banner -->
   <div id="killSwitchBanner" style="display: none; background: #ff4757; color: white; text-align: center; font-size: 12px; font-weight: 700; padding: 4px 12px; z-index: 10000;">
-    🚨 KILL SWITCH ACTIVE — Trading Disabled. All orders cancelled.
+    ðŸš¨ KILL SWITCH ACTIVE â€” Trading Disabled. All orders cancelled.
     <button onclick="rearmKillSwitch()" style="margin-left: 12px; background: #131722; color: #fff; border: 1px solid #fff; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">RE-ENABLE TRADING</button>
   </div>
 
   <!-- Unified Skinny Top Bar -->
   <header class="top-bar">
     <div class="top-bar-left">
-      <span class="brand-text">⚡ TE2</span>
+      <span class="brand-text">âš¡ TE2</span>
       <span id="instDisplay" class="top-inst">NQ (0.25)</span>
       <span id="chartLivePrice" class="top-live-price">---</span>
 
@@ -24,15 +24,15 @@
 
       <!-- Tools -->
       <div style="display: inline-flex; gap: 4px; align-items: center;">
-        <button class="chart-tool-btn" id="btnLayout" onclick="toggleLayout()" title="Toggle panel layout: vertical side column or horizontal top bar">⇋ LAYOUT</button>
-        <button class="chart-tool-btn" onclick="toggleHotkeysPanel()" title="Show hotkey reference">⌨ HOTKEYS</button>
-        <button class="chart-tool-btn" id="btnHotkeysArm" onclick="toggleHotkeysArmed()" title="Toggle Execution Hotkeys (Instant/Breakout)">🛡️ ARMED</button>
-        <button class="chart-tool-btn" id="btnKillSwitch" onclick="triggerKillSwitch()" title="Emergency Kill Switch" style="color: #ff4757; border-color: rgba(255, 71, 87, 0.4);">🚨 KILL</button>
+        <button class="chart-tool-btn" id="btnLayout" onclick="toggleLayout()" title="Toggle panel layout: vertical side column or horizontal top bar">â‡‹ LAYOUT</button>
+        <button class="chart-tool-btn" onclick="toggleHotkeysPanel()" title="Show hotkey reference">âŒ¨ HOTKEYS</button>
+        <button class="chart-tool-btn" id="btnHotkeysArm" onclick="toggleHotkeysArmed()" title="Toggle Execution Hotkeys (Instant/Breakout)">ðŸ›¡ï¸ ARMED</button>
+        <button class="chart-tool-btn" id="btnKillSwitch" onclick="triggerKillSwitch()" title="Emergency Kill Switch" style="color: #ff4757; border-color: rgba(255, 71, 87, 0.4);">ðŸš¨ KILL</button>
       </div>
     </div>
 
     <div class="top-bar-right">
-      <div id="protectionAlertBadge" class="badge badge-red" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">⚠️ NO STOP LOSS</div>
+      <div id="protectionAlertBadge" class="badge badge-red" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">âš ï¸ NO STOP LOSS</div>
       <div id="commandStateBadge" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">PENDING</div>
       <div id="posBadge" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">FLAT</div>
       <div style="display: flex; align-items: center; gap: 4px;">
@@ -48,7 +48,14 @@
       </div>
     </div>
   </header>
-  <!-- Main Container: Command Center (no charts — lines live on the NT8 chart) -->
+
+  <!-- Collapse/expand strip for the top bar (saves vertical space) -->
+  <div id="barCollapseStrip" style="display: flex; justify-content: flex-end; align-items: center; height: 20px; padding: 0 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" title="Collapse / expand the top bar" onclick="toggleTopBar()">
+    <span style="font-size: 9px; color: var(--text-muted); margin-right: 6px;">TOP</span>
+    <span id="barChevron" style="font-size: 10px; color: var(--text-muted);">â–²</span>
+  </div>
+
+  <!-- Main Container: Command Center (no charts â€” lines live on the NT8 chart) -->
   <main class="main-container">
 
     <!-- Unified Trade Command Center -->
@@ -57,8 +64,8 @@
       <!-- 1. Direction & Order Type -->
       <div class="panel" style="margin-bottom: 10px;">
         <div class="btn-group" style="margin-bottom: 6px;">
-          <button id="btnLong" class="btn active-long" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(true)">▲ LONG (BUY)</button>
-          <button id="btnShort" class="btn" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(false)">▼ SHORT (SELL)</button>
+          <button id="btnLong" class="btn active-long" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(true)">â–² LONG (BUY)</button>
+          <button id="btnShort" class="btn" style="font-weight: 700; padding: 9px 12px; font-size: 13px;" onclick="setDirection(false)">â–¼ SHORT (SELL)</button>
         </div>
         <div id="autoOrderTypeBadge" style="padding: 5px 10px; background: rgba(0, 192, 118, 0.1); border: 1px solid rgba(0, 192, 118, 0.4); border-radius: 4px; font-size: 11px; font-weight: 700; color: #00c076; text-align: center; font-family: monospace; letter-spacing: 0.5px;">
           AUTO: LIMIT (PULLBACK)
@@ -73,14 +80,14 @@
 
         <div style="display: flex; gap: 8px; margin-top: 6px;">
           <button class="btn-cancel" style="flex: 1; margin-top: 0; padding: 8px; font-weight: 700;" onclick="cancelOrders()">
-            ✕ CANCEL ORDERS
+            âœ• CANCEL ORDERS
           </button>
           <button class="btn-cancel" style="flex: 1; margin-top: 0; padding: 8px; font-weight: 700; background: rgba(255, 60, 90, 0.15); color: var(--accent-red); border: 1px solid var(--accent-red);" onclick="flattenPosition()">
-            ⚡ FLATTEN & CLOSE
+            âš¡ FLATTEN & CLOSE
           </button>
         </div>
-        <button class="btn" style="margin-top: 6px; width: 100%; padding: 8px; font-weight: 700; background: rgba(0, 192, 118, 0.1); color: var(--accent-green); border: 1px solid rgba(0, 192, 118, 0.4);" onclick="splitTargetTp()" title="Split the working Take Profit in half — half stays here, half moves one R further out">
-          ✂ SPLIT TAKE PROFIT
+        <button class="btn" style="margin-top: 6px; width: 100%; padding: 8px; font-weight: 700; background: rgba(0, 192, 118, 0.1); color: var(--accent-green); border: 1px solid rgba(0, 192, 118, 0.4);" onclick="splitTargetTp()" title="Split the working Take Profit in half â€” half stays here, half moves one R further out">
+          âœ‚ SPLIT TAKE PROFIT
         </button>
       </div>
 
@@ -182,8 +189,8 @@
         
         <!-- Auto-Track and Lock SL in Main Bar -->
         <div class="btn-group" style="margin-bottom: 6px;">
-          <button id="btnAutoTrack" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleAutoTrack()">🎯 Auto-Track: OFF</button>
-          <button id="btnLockSl" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleLockSl()">🔓 Lock SL: OFF</button>
+          <button id="btnAutoTrack" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleAutoTrack()">ðŸŽ¯ Auto-Track: OFF</button>
+          <button id="btnLockSl" class="btn" style="flex: 1; font-size: 11px; padding: 6px;" onclick="toggleLockSl()">ðŸ”“ Lock SL: OFF</button>
         </div>
 
         <!-- Tracking Timeframe: which bar series AutoTrack anchors on
@@ -213,9 +220,9 @@
 
         <!-- Quick Toggles -->
         <div style="display: flex; gap: 6px; margin-top: 6px;">
-          <button id="btnPartial" class="btn" style="flex: 1; font-size: 11px; padding: 5px;" onclick="togglePartial()">⚖️ Partial: OFF</button>
-          <button id="btnShowLines" class="btn active" style="flex: 1; font-size: 11px; padding: 5px;" onclick="toggleShowLines()">👁️ Lines: ON</button>
-          <button class="btn" style="font-size: 11px; padding: 5px 8px;" onclick="openEngineSettingsModal()" title="Full Engine Settings">⚙️</button>
+          <button id="btnPartial" class="btn" style="flex: 1; font-size: 11px; padding: 5px;" onclick="togglePartial()">âš–ï¸ Partial: OFF</button>
+          <button id="btnShowLines" class="btn active" style="flex: 1; font-size: 11px; padding: 5px;" onclick="toggleShowLines()">ðŸ‘ï¸ Lines: ON</button>
+          <button class="btn" style="font-size: 11px; padding: 5px 8px;" onclick="openEngineSettingsModal()" title="Full Engine Settings">âš™ï¸</button>
         </div>
       </div>
 
@@ -223,13 +230,13 @@
       <div class="panel" style="margin-bottom: 10px;">
         <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" onclick="toggleAdvancedPanel()">
           <span style="font-weight: 700; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Advanced Risk & Slippage</span>
-          <span id="advToggleIcon" style="font-size: 10px; color: var(--text-muted);">▼</span>
+          <span id="advToggleIcon" style="font-size: 10px; color: var(--text-muted);">â–¼</span>
         </div>
 
         <div id="advPanelContent" style="display: none; margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 10px;">
           <!-- Dynamic Risk & SL Pad -->
           <div class="btn-group" style="margin-bottom: 6px;">
-            <button id="btnDynRisk" class="btn" style="font-size: 10px; padding: 4px;" onclick="toggleDynRisk()">🛡️ Dyn Risk: OFF</button>
+            <button id="btnDynRisk" class="btn" style="font-size: 10px; padding: 4px;" onclick="toggleDynRisk()">ðŸ›¡ï¸ Dyn Risk: OFF</button>
           </div>
 
           <div class="input-row" style="margin-bottom: 8px;">
@@ -255,10 +262,10 @@
       <!-- Header -->
       <div class="tv-settings-header">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 16px;">⚙️</span>
+          <span style="font-size: 16px;">âš™ï¸</span>
           <span style="font-weight: 700; font-size: 14px; color: #fff; letter-spacing: 0.5px;">Chart Settings</span>
         </div>
-        <button onclick="closeChartSettingsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer;">✕</button>
+        <button onclick="closeChartSettingsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer;">âœ•</button>
       </div>
 
       <!-- Body: Left Tabs & Right Content -->
@@ -266,14 +273,14 @@
         <!-- Sidebar Navigation Tabs -->
         <div class="tv-settings-tabs">
           <button id="tvTabBtnEngine" class="tv-tab-btn active" onclick="switchSettingsTab('engine')">
-            <span>⚙️</span> Engine & Risk
+            <span>âš™ï¸</span> Engine & Risk
           </button>
         </div>
 
         <!-- Content Panels -->
         <div class="tv-settings-content">
           
-          <!-- Engine & Risk configuration (only tab � no charts) -->
+          <!-- Engine & Risk configuration (only tab ï¿½ no charts) -->
           <div id="tvTabContentEngine" style="display: flex; flex-direction: column; gap: 14px;">
             <div style="font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--accent-blue); letter-spacing: 0.5px; border-bottom: 1px solid #2b3042; padding-bottom: 6px;">Slippage & Stop Padding</div>
             <div class="tv-setting-row">
@@ -438,8 +445,8 @@
   <!-- Hotkey Reference Panel -->
   <div id="hotkeysPanel" style="display: none; position: fixed; top: 70px; right: 16px; z-index: 9998; background: rgba(20, 24, 34, 0.96); border: 1px solid #2b3042; border-radius: 8px; padding: 14px 16px; font-size: 12px; color: #c7cdd9; box-shadow: 0 8px 30px rgba(0,0,0,0.5);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <span style="font-weight: 700; color: #ffd166;">⌨ HOTKEYS</span>
-      <button onclick="toggleHotkeysPanel()" style="background: none; border: none; color: #9aa2b5; cursor: pointer; font-size: 14px;">✕</button>
+      <span style="font-weight: 700; color: #ffd166;">âŒ¨ HOTKEYS</span>
+      <button onclick="toggleHotkeysPanel()" style="background: none; border: none; color: #9aa2b5; cursor: pointer; font-size: 14px;">âœ•</button>
     </div>
     <table style="border-collapse: collapse;">
       <tr><td style="padding: 3px 10px 3px 0; color: #00c076;">Shift+F</td><td>Instant entry (marketable limit)</td></tr>
@@ -455,16 +462,16 @@
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">S</td><td>Swap Long / Short</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffb703;">Ctrl+F</td><td>Scale Out</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ff5252;">Ctrl+Space</td><td>Flatten Position</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ff4757; font-weight: 700;">Ctrl+Shift+K</td><td>🚨 Emergency Kill Switch</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">Q</td><td>Toggle risk cash ($100 ↔ $200)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ff4757; font-weight: 700;">Ctrl+Shift+K</td><td>ðŸš¨ Emergency Kill Switch</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">Q</td><td>Toggle risk cash ($100 â†” $200)</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">R</td><td>Set R:R to 1:1</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">A</td><td>Auto-Track on/off</td></tr>
-      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">T</td><td>Cycle Track Timeframe (15s→1m→5m→100t)</td></tr>
+      <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">T</td><td>Cycle Track Timeframe (15sâ†’1mâ†’5mâ†’100t)</td></tr>
       <tr><td style="padding: 3px 10px 3px 0; color: #ffd166;">L</td><td>Lock Stop Loss on/off</td></tr>
     </table>
   </div>
 
-  <script type="module" src="app.js?v=114"></script>
+  <script type="module" src="app.js?v=115"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');
@@ -476,7 +483,7 @@
       if (!content) return;
       const isHidden = content.style.display === 'none';
       content.style.display = isHidden ? 'block' : 'none';
-      if (icon) icon.innerText = isHidden ? '▲' : '▼';
+      if (icon) icon.innerText = isHidden ? 'â–²' : 'â–¼';
     }
   </script>
 </body>

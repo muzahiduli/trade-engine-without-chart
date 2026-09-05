@@ -46,6 +46,16 @@ body {
   align-items: center;
   gap: 10px;
   z-index: 100;
+  flex: 0 0 auto;
+}
+
+/* Collapsed top bar: hidden entirely; the thin TOP▲ strip remains so it can
+   be re-expanded without the header taking vertical space. */
+body.bar-collapsed .top-bar {
+  display: none;
+}
+#barCollapseStrip {
+  flex: 0 0 auto;
 }
 
 .top-bar-left {
@@ -146,7 +156,7 @@ body {
   padding: 10px;
   flex: 1;
   overflow: hidden;
-  height: calc(100vh - 36px);
+  min-height: 0;
 }
 
 @media (max-width: 960px) {

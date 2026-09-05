@@ -185,6 +185,23 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- Collapse / expand the top bar (saves vertical space) ----
+window.toggleTopBar = function () {
+  const collapsed = !document.body.classList.contains('bar-collapsed');
+  document.body.classList.toggle('bar-collapsed', collapsed);
+  const chev = document.getElementById('barChevron');
+  if (chev) chev.textContent = collapsed ? '▼' : '▲';
+  try { localStorage.setItem('tradeEngine_bar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
+};
+
+function applySavedBar() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem('tradeEngine_bar') === 'collapsed'; } catch (e) {}
+  document.body.classList.toggle('bar-collapsed', collapsed);
+  const chev = document.getElementById('barChevron');
+  if (chev) chev.textContent = collapsed ? '▼' : '▲';
+}
+
 // ---- Panel layout toggle: vertical side column vs horizontal top bar ----
 window.toggleLayout = function () {
   const main = document.querySelector('main');
@@ -214,6 +231,7 @@ function boot() {
   // Load saved engine settings (inputs) into the panel.
   try { applyEngineSettings(); } catch (e) { console.error('applyEngineSettings failed:', e); }
   try { applySavedLayout(); } catch (e) { console.error('applySavedLayout failed:', e); }
+  try { applySavedBar(); } catch (e) { console.error('applySavedBar failed:', e); }
 }
 
 if (document.readyState === 'loading') {
