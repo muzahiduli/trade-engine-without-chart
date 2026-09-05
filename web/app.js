@@ -3,7 +3,7 @@
 // The SL/TP/entry lines live on the NinjaTrader chart (LineHost drawing tool)
 // and the engine is authoritative for all logic.
 import { onStateChange, getState } from './js/state.js';
-import { connectWS, executeTrade, cancelOrders, cancelSpecificOrder, changeSpecificOrder, flattenPosition, sendPriceUpdate, splitTargetOrder } from './js/ws.js';
+import { connectWS, executeTrade, cancelOrders, cancelSpecificOrder, changeSpecificOrder, flattenPosition, sendPriceUpdate, splitTargetOrder, sendConfig } from './js/ws.js';
 import { initHotkeys, HOTKEY_ACTIONS, getBinding, setBinding, resetBindings, normalizeKeyEvent, isEditableTarget } from './js/hotkeys.js';
 import {
   renderUI,
@@ -188,14 +188,26 @@ window.toggleTopBar = function () {
   try { localStorage.setItem('tradeEngine_bar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
 };
 
-// Clicking the indicator explains how to toggle; the real toggle is plain 'L'
-// inside NinjaTrader (the AddOn sends HOTKEY_STATUS which flips the badge).
-window.toggleWebHotkeyHint = function () {
+// The ⌨ HOTKEYS button is the SINGLE master switch: clicking it flips the
+// engine's enableHotkeys via SET_CONFIG. The hub broadcasts SYNC_STATE; the
+// NT8 AddOn mirrors enableHotkeys into its forwarding flag, so the web button,
+// the 'L' key, and the AddOn all flip the same switch and can never disagree.
+window.toggleHotkeyForwarding = function () {
+  const s = getState();
+  if (!s || s.hotkeyAddonConnected === false) {
+    const el = document.getElementById('hotkeyIndicator');
+    if (el) { el.textContent = '⌨ ADDON OFFLINE'; }
+    return;
+  }
+  const next = !(s.enableHotkeys !== false);
+  sendConfig({ enableHotkeys: next });
   const el = document.getElementById('hotkeyIndicator');
-  if (!el) return;
-  const body = el.innerHTML;
-  el.innerHTML = 'PRESS L IN NINJATRADER';
-  setTimeout(() => { el.innerHTML = body; }, 2500);
+  if (el) {
+    el.textContent = next ? '⌨ HOTKEYS: ON' : '⌨ HOTKEYS: OFF';
+    el.style.color = next ? '#00c076' : '#ffd166';
+    el.style.background = next ? 'rgba(0,192,118,0.15)' : 'rgba(255,209,102,0.15)';
+    el.style.border = `1px solid ${next ? 'rgba(0,192,118,0.4)' : 'rgba(255,209,102,0.4)'}`;
+  }
 };
 
 function applySavedBar() {

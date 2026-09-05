@@ -32,7 +32,7 @@
     </div>
 
     <div class="top-bar-right">
-      <div id="hotkeyIndicator" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; cursor: pointer;" title="Hotkey forwarding: green = ON, red = OFF (press L in NinjaTrader to toggle)">&#8984; HOTKEYS: ...</div>
+      <div id="hotkeyIndicator" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; cursor: pointer;" title="Click to turn hotkeys ON/OFF (also works via L in NinjaTrader)" onclick="toggleHotkeyForwarding()">&#8984; HOTKEYS: ...</div>
 <div class="top-bar-right">
       <div id="protectionAlertBadge" class="badge badge-red" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">⚠️ NO STOP LOSS</div>
       <div id="commandStateBadge" class="badge" style="display: none; font-weight: 700; font-family: var(--font-mono); font-size: 11px; padding: 2px 7px; border-radius: 4px;">PENDING</div>
@@ -453,7 +453,7 @@
     </table>
   </div>
 
-  <script type="module" src="app.js?v=123"></script>
+  <script type="module" src="app.js?v=124"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');

@@ -97,26 +97,26 @@ export function renderUI() {
     btnArm.style.borderColor = armed ? 'rgba(0, 192, 118, 0.4)' : 'rgba(255, 209, 102, 0.4)';
   }
 
-  // Hotkey forwarding indicator (NT8 AddOn): connected + enabled = green ON,
-  // connected + disabled = amber, not connected = red OFFLINE.
+  // Hotkeys master switch (single source of truth = state.enableHotkeys; the
+  // AddOn mirrors it and the L key flips the same flag). Clicking toggles.
   const hkInd = document.getElementById('hotkeyIndicator');
   if (hkInd) {
     const connected = state.hotkeyAddonConnected === true;
-    const enabled = state.hotkeyForwardingEnabled !== false;
+    const enabled = state.enableHotkeys !== false;
     if (!connected) {
-      hkInd.textContent = '? HOTKEYS: OFFLINE';
+      hkInd.textContent = '\u2328 HOTKEYS: OFFLINE';
       hkInd.style.color = '#ff4757';
       hkInd.style.background = 'rgba(255, 71, 87, 0.15)';
       hkInd.style.border = '1px solid rgba(255, 71, 87, 0.4)';
       hkInd.style.display = 'inline-block';
     } else if (enabled) {
-      hkInd.textContent = '? HOTKEYS: ON';
+      hkInd.textContent = '\u2328 HOTKEYS: ON';
       hkInd.style.color = '#00c076';
       hkInd.style.background = 'rgba(0, 192, 118, 0.15)';
       hkInd.style.border = '1px solid rgba(0, 192, 118, 0.4)';
       hkInd.style.display = 'inline-block';
     } else {
-      hkInd.textContent = '? HOTKEYS: OFF';
+      hkInd.textContent = '\u2328 HOTKEYS: OFF';
       hkInd.style.color = '#ffd166';
       hkInd.style.background = 'rgba(255, 209, 102, 0.15)';
       hkInd.style.border = '1px solid rgba(255, 209, 102, 0.4)';

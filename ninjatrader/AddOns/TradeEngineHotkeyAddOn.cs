@@ -337,12 +337,16 @@ private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
             // hotkeys are for chart focus, not for typing.
             if (IsTypingInNinjaTrader()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
 
-            // Toggle: plain L (no modifiers) flips forwarding on/off.
+            // Toggle: plain L (no modifiers) flips the engine's ENABLE_HOTKEYS
+            // (single source of truth). The hub updates state, broadcasts
+            // SYNC_STATE, and this AddOn mirrors enableHotkeys -> forwarding —
+            // so the web button, 'L', and the AddOn can never disagree.
             if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
             {
-                forwardingEnabled = !forwardingEnabled;
+                bool next = !forwardingEnabled;
+                forwardingEnabled = next;
                 Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
-                SendStatus();
+                SendWs("SET_CONFIG", string.Format("{{\"enableHotkeys\":{0}}}", next ? "true" : "false"));
                 return new IntPtr(1); // swallow the toggle key
             }
 
@@ -473,9 +477,43 @@ private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
                     }
                     WebSocketReceiveResult result = recvTask.Result;
                     if (result.MessageType == WebSocketMessageType.Close) break;
-                    // We only SEND hotkeys; inbound is intentionally ignored.
-                    if (result.EndOfMessage) sb.Clear();
-                    else sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                    // Inbound: sync our forwarding state from the hub's SINGLE
+                    // SOURCE OF TRUTH (enableHotkeys in SYNC_STATE). The web
+                    // button and 'L' both just flip enableHotkeys — the AddOn
+                    // always mirrors it here, so a web-panel toggle and an L-press
+                    // can never disagree.
+                    if (result.EndOfMessage)
+                    {
+                        try
+                        {
+                            var line = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            if (line != null && line.IndexOf("SYNC_STATE", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                var ser = new System.Web.Script.Serialization.JavaScriptSerializer();
+                                Dictionary<string, object> root = ser.Deserialize<Dictionary<string, object>>(line);
+                                if (root != null && root.ContainsKey("payload"))
+                                {
+                                    var p = root["payload"] as Dictionary<string, object>;
+                                    if (p != null && p.ContainsKey("enableHotkeys"))
+                                    {
+                                        bool en;
+                                        if (bool.TryParse(p["enableHotkeys"].ToString(), out en))
+                                        {
+                                            bool changed = en != forwardingEnabled;
+                                            forwardingEnabled = en;
+                                            if (changed) Crumb("ENGINE enableHotkeys -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        sb.Clear();
+                    }
+                    else
+                    {
+                        sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                    }
                 }
                 catch
                 {
