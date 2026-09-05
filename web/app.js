@@ -190,7 +190,7 @@ window.toggleTopBar = function () {
   const collapsed = !document.body.classList.contains('bar-collapsed');
   document.body.classList.toggle('bar-collapsed', collapsed);
   const chev = document.getElementById('barChevron');
-  if (chev) chev.textContent = collapsed ? '?' : '?';
+  if (chev) chev.textContent = collapsed ? '▼' : '▲';
   try { localStorage.setItem('tradeEngine_bar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
 };
 
@@ -209,7 +209,7 @@ function applySavedBar() {
   try { collapsed = localStorage.getItem('tradeEngine_bar') === 'collapsed'; } catch (e) {}
   document.body.classList.toggle('bar-collapsed', collapsed);
   const chev = document.getElementById('barChevron');
-  if (chev) chev.textContent = collapsed ? '?' : '?';
+  if (chev) chev.textContent = collapsed ? '▼' : '▲';
 }
 
 // ---- Panel layout toggle: vertical side column vs horizontal top bar ----

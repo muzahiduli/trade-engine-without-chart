@@ -49,8 +49,9 @@ body {
   flex: 0 0 auto;
 }
 
-/* Collapsed top bar: header hidden entirely; the thin strip becomes a 6px
-   sliver (click to restore) so nearly zero vertical space is wasted. */
+/* Collapsed top bar: header hidden entirely; the strip stays a slim 16px
+   clickable bar showing a ▼ expand affordance so it can ALWAYS be restored
+   by clicking (the top bar never gets stuck hidden). */
 body.bar-collapsed .top-bar {
   display: none;
 }
@@ -60,11 +61,23 @@ body.bar-collapsed .top-bar {
   overflow: hidden;
 }
 body.bar-collapsed #barCollapseStrip {
-  height: 6px;
+  height: 16px;
   border-bottom: 1px solid var(--border-color);
+  justify-content: center;
+}
+body.bar-collapsed #barCollapseStrip button {
+  display: none; /* hide reload/close while collapsed; restore by clicking bar */
 }
 body.bar-collapsed #barCollapseStrip span {
-  display: none; /* hide the TOP? text; the sliver itself is the restore target */
+  font-size: 10px;
+  margin-right: 0;
+  color: var(--text-muted);
+}
+body.bar-collapsed #barChevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  width: 100%;
 }
 
 .top-bar-left {
