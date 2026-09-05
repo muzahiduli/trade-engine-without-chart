@@ -550,48 +550,56 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // (UI thread) — never here, OnRender runs on the render thread and
                 // touching WPF UI from it breaks rendering (the "lines vanished" bug).
                 if (RenderTarget == null || chartControl == null || chartScale == null) return;
-                if (entryPrice <= 0 || stopPrice <= 0 || targetPrice <= 0) return;
 
-            double canvasLeft = chartControl.CanvasLeft;
-            double canvasRight = chartControl.CanvasRight;
+                double canvasLeft = chartControl.CanvasLeft;
+                double canvasRight = chartControl.CanvasRight;
 
-            float entryY = (float)chartScale.GetYByValue(entryPrice);
-            float stopY = (float)chartScale.GetYByValue(stopPrice);
-            float targetY = (float)chartScale.GetYByValue(targetPrice);
+                if (entryBrush == null || cachedRenderTarget != RenderTarget)
+                {
+                    if (entryBrush != null) entryBrush.Dispose();
+                    if (stopBrush != null) stopBrush.Dispose();
+                    if (targetBrush != null) targetBrush.Dispose();
+                    if (targetHoverBrush != null) targetHoverBrush.Dispose();
+                    cachedRenderTarget = RenderTarget;
+                    entryBrush = CreateDxBrush(entryWpfColor);
+                    stopBrush = CreateDxBrush(stopWpfColor);
+                    targetBrush = CreateDxBrush(targetWpfColor);
+                    targetHoverBrush = CreateDxBrush(targetWpfColor, 0.7f);
+                }
 
-            if (entryBrush == null || cachedRenderTarget != RenderTarget)
-            {
-                if (entryBrush != null) entryBrush.Dispose();
-                if (stopBrush != null) stopBrush.Dispose();
-                if (targetBrush != null) targetBrush.Dispose();
-                if (targetHoverBrush != null) targetHoverBrush.Dispose();
-                cachedRenderTarget = RenderTarget;
-                entryBrush = CreateDxBrush(entryWpfColor);
-                stopBrush = CreateDxBrush(stopWpfColor);
-                targetBrush = CreateDxBrush(targetWpfColor);
-                targetHoverBrush = CreateDxBrush(targetWpfColor, 0.7f);
-            }
+                // Each line is drawn INDEPENDENTLY — a missing/unset price (e.g.
+                // the target after the R hotkey, which sets entry+stop only) must
+                // never blank the other lines. This was the "lines disappear"
+                // bug: the previous gate returned early if ANY price was <= 0.
+                EnsureLabelBrushes();
+                double pointValue = 0;
+                try { pointValue = Instrument.MasterInstrument.PointValue; } catch { }
 
-            // Winner lines only when engine reports an open position; plan mode
-            // always shows draggable entry/stop/target lines.
-            RenderTarget.DrawLine(new Vector2((float)canvasLeft, entryY), new Vector2((float)canvasRight, entryY), entryBrush, lineThickness);
-            RenderTarget.DrawLine(new Vector2((float)canvasLeft, stopY), new Vector2((float)canvasRight, stopY), stopBrush, lineThickness);
-            RenderTarget.DrawLine(new Vector2((float)canvasLeft, targetY), new Vector2((float)canvasRight, targetY), targetBrush, lineThickness);
-
-            // RiskRewardTool-style detail boxes on each line.
-            EnsureLabelBrushes();
-            double pointValue = Instrument.MasterInstrument.PointValue;
-            double slDist = Math.Abs(entryPrice - stopPrice);
-            double stopDollars = slDist * pointValue;
-            double tpDist = Math.Abs(targetPrice - entryPrice);
-            double tpDollars = tpDist * pointValue;
-
-            DrawLineLabel(canvasLeft, canvasRight, entryY, entryBrush,
-                string.Format(" ENTRY ({0} contracts):\n {1:F2}", PositionQty(), entryPrice)); 
-            DrawLineLabel(canvasLeft, canvasRight, stopY, stopBrush,
-                string.Format(" STOP ({0} contracts):\n {1:F2} (-{2:F2} pts) (-{3:C2})", PositionQty(), stopPrice, slDist, stopDollars));
-            DrawLineLabel(canvasLeft, canvasRight, targetY, targetBrush,
-                string.Format(" TARGET ({0} contracts):\n {1:F2} (+{2:F2} pts) (+{3:C2})", PositionQty(), targetPrice, tpDist, tpDollars));
+                if (entryPrice > 0)
+                {
+                    float entryY = (float)chartScale.GetYByValue(entryPrice);
+                    RenderTarget.DrawLine(new Vector2((float)canvasLeft, entryY), new Vector2((float)canvasRight, entryY), entryBrush, lineThickness);
+                    DrawLineLabel(canvasLeft, canvasRight, entryY, entryBrush,
+                        string.Format(" ENTRY ({0} contracts):\n {1:F2}", PositionQty(), entryPrice));
+                }
+                if (stopPrice > 0)
+                {
+                    float stopY = (float)chartScale.GetYByValue(stopPrice);
+                    RenderTarget.DrawLine(new Vector2((float)canvasLeft, stopY), new Vector2((float)canvasRight, stopY), stopBrush, lineThickness);
+                    double slDist = Math.Abs(entryPrice - stopPrice);
+                    double stopDollars = slDist * pointValue;
+                    DrawLineLabel(canvasLeft, canvasRight, stopY, stopBrush,
+                        string.Format(" STOP ({0} contracts):\n {1:F2} (-{2:F2} pts) (-{3:C2})", PositionQty(), stopPrice, slDist, stopDollars));
+                }
+                if (targetPrice > 0)
+                {
+                    float targetY = (float)chartScale.GetYByValue(targetPrice);
+                    RenderTarget.DrawLine(new Vector2((float)canvasLeft, targetY), new Vector2((float)canvasRight, targetY), targetBrush, lineThickness);
+                    double tpDist = Math.Abs(targetPrice - entryPrice);
+                    double tpDollars = tpDist * pointValue;
+                    DrawLineLabel(canvasLeft, canvasRight, targetY, targetBrush,
+                        string.Format(" TARGET ({0} contracts):\n {1:F2} (+{2:F2} pts) (+{3:C2})", PositionQty(), targetPrice, tpDist, tpDollars));
+                }
             }
             catch
             {
