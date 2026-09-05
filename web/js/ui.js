@@ -97,6 +97,33 @@ export function renderUI() {
     btnArm.style.borderColor = armed ? 'rgba(0, 192, 118, 0.4)' : 'rgba(255, 209, 102, 0.4)';
   }
 
+  // Hotkey forwarding indicator (NT8 AddOn): connected + enabled = green ON,
+  // connected + disabled = amber, not connected = red OFFLINE.
+  const hkInd = document.getElementById('hotkeyIndicator');
+  if (hkInd) {
+    const connected = state.hotkeyAddonConnected === true;
+    const enabled = state.hotkeyForwardingEnabled !== false;
+    if (!connected) {
+      hkInd.textContent = '⌨ HOTKEYS: OFFLINE';
+      hkInd.style.color = '#ff4757';
+      hkInd.style.background = 'rgba(255, 71, 87, 0.15)';
+      hkInd.style.border = '1px solid rgba(255, 71, 87, 0.4)';
+      hkInd.style.display = 'inline-block';
+    } else if (enabled) {
+      hkInd.textContent = '⌨ HOTKEYS: ON';
+      hkInd.style.color = '#00c076';
+      hkInd.style.background = 'rgba(0, 192, 118, 0.15)';
+      hkInd.style.border = '1px solid rgba(0, 192, 118, 0.4)';
+      hkInd.style.display = 'inline-block';
+    } else {
+      hkInd.textContent = '⌨ HOTKEYS: OFF';
+      hkInd.style.color = '#ffd166';
+      hkInd.style.background = 'rgba(255, 209, 102, 0.15)';
+      hkInd.style.border = '1px solid rgba(255, 209, 102, 0.4)';
+      hkInd.style.display = 'inline-block';
+    }
+  }
+
   const killBanner = document.getElementById('killSwitchBanner');
   if (killBanner) {
     killBanner.style.display = state.tradingDisabled ? 'block' : 'none';

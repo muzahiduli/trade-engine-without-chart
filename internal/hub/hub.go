@@ -152,6 +152,7 @@ func (h *Hub) Run() {
 		case client := <-h.Register:
 			h.Mu.Lock()
 			h.Clients[client] = true
+			h.refreshHotkeyAddonConnectedLocked()
 			h.Mu.Unlock()
 			log.Printf("Client connected: %s (Total clients: %d)", client.ClientType, len(h.Clients))
 			if client.ClientType == "WEB" {
@@ -164,12 +165,30 @@ func (h *Hub) Run() {
 				// appear at the engine's authoritative prices immediately.
 				go h.SendStateToClient(client)
 			}
+			if client.ClientType == "HOTKEY" {
+				// The hotkey forwarder AddOn is connected; push current state so
+				// the web panel can show the indicator instantly.
+				go h.SendStateToClient(client)
+				go h.BroadcastState()
+			}
 
 		case client := <-h.Unregister:
 			h.Mu.Lock()
 			if _, ok := h.Clients[client]; ok {
 				delete(h.Clients, client)
 				close(client.Send)
+				h.refreshHotkeyAddonConnectedLocked()
+				if client.ClientType == "HOTKEY" {
+					// Advertise the disconnect so the web indicator clears.
+					stateBytes, _ := json.Marshal(h.State)
+					msg := risk.WSMessage{Type: "SYNC_STATE", Payload: stateBytes}
+					bytes, _ := json.Marshal(msg)
+					for c := range h.Clients {
+						if isStateReceiver(c) {
+							sendToClient(c, bytes)
+						}
+					}
+				}
 			}
 			h.Mu.Unlock()
 			log.Printf("Client disconnected: %s (Total clients: %d)", client.ClientType, len(h.Clients))
@@ -192,6 +211,7 @@ func (h *Hub) Run() {
 				if _, ok := h.Clients[client]; ok {
 					delete(h.Clients, client)
 					close(client.Send)
+					h.refreshHotkeyAddonConnectedLocked()
 					log.Printf("Client evicted (slow consumer): %s", client.ClientType)
 				}
 				h.Mu.Unlock()
@@ -220,6 +240,19 @@ func sendToClient(client *Client, bytes []byte) (ok bool) {
 	}
 }
 
+// refreshHotkeyAddonConnectedLocked recomputes whether the NT8 hotkey
+// forwarder AddOn is connected. Caller must hold h.Mu (write lock).
+func (h *Hub) refreshHotkeyAddonConnectedLocked() {
+	connected := false
+	for c := range h.Clients {
+		if c.ClientType == "HOTKEY" {
+			connected = true
+			break
+		}
+	}
+	h.State.HotkeyAddonConnected = connected
+}
+
 // BroadcastToWeb broadcasts a message only to connected state-receiving
 // clients: the web control panel ("WEB") and the charterless chart's line host
 // ("LINEHOST" — the NT8 indicator that mirrors engine state onto draggable
@@ -244,9 +277,10 @@ func (h *Hub) BroadcastToWeb(msgType string, payload json.RawMessage) {
 }
 
 // isStateReceiver reports whether a client wants engine state broadcasts
-// (SYNC_STATE). The web panel and the charterless line host both do.
+// (SYNC_STATE). The web panel, the charterless line host, and the hotkey
+// forwarder AddOn all do.
 func isStateReceiver(client *Client) bool {
-	return client.ClientType == "WEB" || client.ClientType == "LINEHOST"
+	return client.ClientType == "WEB" || client.ClientType == "LINEHOST" || client.ClientType == "HOTKEY"
 }
 
 // ForwardToNT8 forwards execution commands directly to connected adapter clients.
@@ -289,6 +323,18 @@ func (h *Hub) HandleMessage(client *Client, msg risk.WSMessage) {
 		var hk risk.HotkeyCmd
 		if err := json.Unmarshal(msg.Payload, &hk); err == nil {
 			h.HandleHotkey(hk.Action)
+		}
+
+	case "HOTKEY_STATUS":
+		// The AddOn reports its forwarding on/off state (toggled with 'L').
+		var st struct {
+			Enabled bool `json:"enabled"`
+		}
+		if json.Unmarshal(msg.Payload, &st) == nil {
+			h.Mu.Lock()
+			h.State.HotkeyForwardingEnabled = st.Enabled
+			h.Mu.Unlock()
+			go h.BroadcastState()
 		}
 
 	case "EXECUTE_ORDER":

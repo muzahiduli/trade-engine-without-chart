@@ -124,6 +124,12 @@ type TradeState struct {
 	// Hotkey Management
 	EnableHotkeys            bool    `json:"enableHotkeys"`
 	HotkeysArmed             bool    `json:"hotkeysArmed"`
+	// HotkeyAddonConnected reports whether the NT8 hotkey-forwarding AddOn is
+	// connected to the hub right now.
+	HotkeyAddonConnected bool `json:"hotkeyAddonConnected"`
+	// HotkeyForwardingEnabled is the AddOn's current forward on/off state
+	// (toggled with plain 'L' in NinjaTrader; reported via HOTKEY_STATUS).
+	HotkeyForwardingEnabled bool `json:"hotkeyForwardingEnabled"`
 	InstantEntryOffsetTicks  int     `json:"instantEntryOffsetTicks"`
 	BreakoutEntryOffsetTicks int     `json:"breakoutEntryOffsetTicks"`
 	TrailStopOffsetTicks     int     `json:"trailStopOffsetTicks"`

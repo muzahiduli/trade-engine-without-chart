@@ -49,13 +49,22 @@ body {
   flex: 0 0 auto;
 }
 
-/* Collapsed top bar: hidden entirely; the thin TOP▲ strip remains so it can
-   be re-expanded without the header taking vertical space. */
+/* Collapsed top bar: header hidden entirely; the thin strip becomes a 6px
+   sliver (click to restore) so nearly zero vertical space is wasted. */
 body.bar-collapsed .top-bar {
   display: none;
 }
 #barCollapseStrip {
   flex: 0 0 auto;
+  transition: height 0.15s ease;
+  overflow: hidden;
+}
+body.bar-collapsed #barCollapseStrip {
+  height: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+body.bar-collapsed #barCollapseStrip span {
+  display: none; /* hide the TOP▲ text; the sliver itself is the restore target */
 }
 
 .top-bar-left {

@@ -194,6 +194,16 @@ window.toggleTopBar = function () {
   try { localStorage.setItem('tradeEngine_bar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
 };
 
+// Clicking the indicator explains how to toggle; the real toggle is plain 'L'
+// inside NinjaTrader (the AddOn sends HOTKEY_STATUS which flips the badge).
+window.toggleWebHotkeyHint = function () {
+  const el = document.getElementById('hotkeyIndicator');
+  if (!el) return;
+  const body = el.innerHTML;
+  el.innerHTML = 'PRESS L IN NINJATRADER';
+  setTimeout(() => { el.innerHTML = body; }, 2500);
+};
+
 function applySavedBar() {
   let collapsed = false;
   try { collapsed = localStorage.getItem('tradeEngine_bar') === 'collapsed'; } catch (e) {}

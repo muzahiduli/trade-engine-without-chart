@@ -1,11 +1,19 @@
 // TradeEngineHotkeyAddOn — forwards global hotkeys to the Go trade engine.
 //
-// NO overlay window, NO browser — it is invisible. Its only job: a Win32
-// low-level keyboard hook maps the same combos the web terminal uses
-// (Ctrl+1/2/3, Shift+F/R/S/B/C, Ctrl+Space, Ctrl+Shift+K, etc.) to engine
-// HOTKEY actions, and sends {"type":"HOTKEY","payload":{"action":...}} over a
-// WebSocket to the hub (same endpoint/type as the web panel). Works even while
-// the user drags lines / has focus anywhere in NinjaTrader.
+// Invisible AddOn (no window, no browser). Its only job: a Win32 low-level
+// keyboard hook maps the same combos the web terminal uses to engine HOTKEY
+// actions and sends them over WebSocket to the hub.
+//
+// Key behaviors:
+//  - FOCUS-GATED: hotkeys only act while a NinjaTrader window has the
+//    foreground focus. When you're in Chrome / any other app the hook lets
+//    every key pass through untouched — it never intercepts normal typing.
+//  - TOGGLE: pressing plain 'L' (no modifiers) flips forwarding on/off.
+//    The engine is told via HOTKEY_STATUS {enabled} so the web panel can show
+//    the state.
+//  - CONNECTS AS "HOTKEY": the WebSocket reports type=HOTKEY so the hub can
+//    distinguish this addon from the browser panel and expose
+//    hotkeyForwarding/hotkeyConnected in SYNC_STATE.
 //
 // The engine executes all trades through the gateway strategy — this addon
 // never calls SendOrder()/Submit().
@@ -34,7 +42,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly Queue<string> outboundQueue = new Queue<string>();
         private readonly SemaphoreSlim queueSignal = new SemaphoreSlim(0);
         private bool isWsConnected;
-        private string webSocketUrl = "ws://localhost:8080/ws?type=WEB";
+        private string webSocketUrl = "ws://localhost:8080/ws?type=HOTKEY";
 
         // ---------------- Keyboard hook ----------------
         private const int WH_KEYBOARD_LL = 13;
@@ -44,6 +52,10 @@ namespace NinjaTrader.NinjaScript.AddOns
         private IntPtr hookHandle = IntPtr.Zero;
         private readonly Dictionary<string, HotkeyBinding> bindings = new Dictionary<string, HotkeyBinding>();
         private bool hooked;
+
+        // ---------------- State ----------------
+        private bool forwardingEnabled = true; // default ON; toggled with plain 'L'
+        private uint nt8Pid;                   // our own process id (NinjaTrader)
 
         private class HotkeyBinding
         {
@@ -75,7 +87,23 @@ namespace NinjaTrader.NinjaScript.AddOns
             bindings["KILL_SWITCH"]     = new HotkeyBinding("KILL_SWITCH",     true,  true,  false, VK_K);
         }
 
-        private const byte VK_F = 0x46, VK_R = 0x52, VK_S = 0x53, VK_B = 0x42, VK_C = 0x43, VK_K = 0x4B, VK_SPACE = 0x20;
+        private const byte VK_F = 0x46, VK_R = 0x52, VK_S = 0x53, VK_B = 0x42, VK_C = 0x43, VK_K = 0x4B, VK_L = 0x4C, VK_SPACE = 0x20;
+
+        // Diagnostic breadcrumb so failures are visible without UI automation.
+        private static string CrumbPath
+        {
+            get { return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TradeEngineHotkeyAddOn.log"); }
+        }
+
+        private void Crumb(string text)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(CrumbPath,
+                    DateTime.Now.ToString("HH:mm:ss.fff") + "  " + text + Environment.NewLine);
+            }
+            catch { }
+        }
 
         protected override void OnStateChange()
         {
@@ -85,6 +113,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             else if (State == State.Terminated)
             {
+                Crumb("Terminated");
                 StopWebSocket();
                 UnhookKeyboard();
             }
@@ -93,17 +122,20 @@ namespace NinjaTrader.NinjaScript.AddOns
         protected override void OnWindowCreated(Window window)
         {
             ControlCenter cc = window as ControlCenter;
-            if (cc == null) return;
+            if (cc == null) { Crumb("OnWindowCreated: window is " + (window == null ? "null" : window.GetType().Name) + " (not ControlCenter)"); return; }
 
+            Crumb("OnWindowCreated: ControlCenter detected");
+            nt8Pid = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
             BuildDefaultBindings();
             StartWebSocket();
             HookKeyboard();
+            Crumb("startup: WS=" + (isWsConnected ? "connected" : "connecting") + " hook=" + (hooked ? "installed" : "FAILED"));
 
             cc.Dispatcher.InvokeAsync(() =>
             {
                 try
                 {
-                    NinjaTrader.Code.Output.Process("TradeEngineHotkeyAddOn: hotkey forwarding active", PrintTo.OutputTab1);
+                    NinjaTrader.Code.Output.Process("TradeEngineHotkeyAddOn: hotkey forwarding active (L = toggle)", PrintTo.OutputTab1);
                 }
                 catch { }
             });
@@ -113,6 +145,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             UnhookKeyboard();
             StopWebSocket();
+            Crumb("OnWindowDestroyed");
         }
 
         // ===================== Keyboard hook =====================
@@ -140,6 +173,12 @@ namespace NinjaTrader.NinjaScript.AddOns
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
         [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
 
@@ -147,14 +186,22 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void HookKeyboard()
         {
-            if (hooked) return;
+            if (hooked) { Crumb("HookKeyboard: already hooked"); return; }
             hookProc = KeyboardProc;
-            using (var cur = System.Diagnostics.Process.GetCurrentProcess())
-            using (var m = cur.MainModule)
+            try
             {
-                hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, hookProc, GetModuleHandle(m.ModuleName), 0);
+                using (var cur = System.Diagnostics.Process.GetCurrentProcess())
+                using (var m = cur.MainModule)
+                {
+                    hookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, hookProc, GetModuleHandle(m.ModuleName), 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Crumb("HookKeyboard exception: " + ex.Message);
             }
             hooked = hookHandle != IntPtr.Zero;
+            Crumb("HookKeyboard: handle=" + (hookHandle == IntPtr.Zero ? "NULL (FAILED)" : hookHandle.ToString()) + " hooked=" + hooked);
         }
 
         private void UnhookKeyboard()
@@ -163,6 +210,23 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (hookHandle != IntPtr.Zero) UnhookWindowsHookEx(hookHandle);
             hookHandle = IntPtr.Zero;
             hooked = false;
+        }
+
+        // Returns true when the foreground window belongs to NinjaTrader.
+        private bool IsNinjaTraderFocused()
+        {
+            try
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero) return true; // no fg — assume our context
+                uint pid;
+                GetWindowThreadProcessId(fg, out pid);
+                return pid == nt8Pid;
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
@@ -177,10 +241,32 @@ namespace NinjaTrader.NinjaScript.AddOns
                     bool shift = IsKeyDown(0x10);
                     bool alt = IsKeyDown(0x12);
 
+                    // Toggle: plain L (no modifiers) flips forwarding on/off.
+                    if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
+                    {
+                        forwardingEnabled = !forwardingEnabled;
+                        Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
+                        SendStatus();
+                        return new IntPtr(1); // swallow the toggle key
+                    }
+
+                    if (!forwardingEnabled) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+
+                    // FOCUS GATE: never intercept keys unless NinjaTrader itself
+                    // is the foreground app — otherwise we'd hijack Chrome/other
+                    // apps and typed combos would execute trades.
+                    if (!IsNinjaTraderFocused()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+
                     foreach (var b in bindings.Values)
                     {
                         if (b.Key != (byte)k.vkCode) continue;
                         if (b.Ctrl != ctrl || b.Shift != shift || b.Alt != alt) continue;
+                        if (!isWsConnected)
+                        {
+                            Crumb("KEY " + b.Action + " ignored: WS not connected");
+                            return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+                        }
+                        Crumb("KEY forward " + b.Action);
                         SendHotkeyAction(b.Action);
                         return new IntPtr(1); // swallow the key
                     }
@@ -193,6 +279,12 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             string payload = string.Format("{{\"action\":\"{0}\"}}", action);
             SendWs("HOTKEY", payload);
+        }
+
+        private void SendStatus()
+        {
+            string payload = string.Format("{{\"enabled\":{0}}}", forwardingEnabled ? "true" : "false");
+            SendWs("HOTKEY_STATUS", payload);
         }
 
         // ===================== WebSocket plumbing =====================
@@ -227,6 +319,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                         await client.ConnectAsync(new Uri(webSocketUrl), ct).ConfigureAwait(false);
                         wsClient = client;
                         isWsConnected = true;
+                        Crumb("WS connected to " + webSocketUrl);
+                        SendStatus(); // tell the engine our enabled state on (re)connect
                         NinjaTrader.Code.Output.Process("TradeEngineHotkeyAddOn: connected to engine", PrintTo.OutputTab1);
                         await Task.WhenAll(SenderAsync(ct), ReceiverAsync(ct)).ConfigureAwait(false);
                     }
