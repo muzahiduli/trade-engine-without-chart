@@ -143,9 +143,12 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         protected override void OnWindowDestroyed(Window window)
         {
-            UnhookKeyboard();
-            StopWebSocket();
-            Crumb("OnWindowDestroyed");
+            // NOTE: do NOT unhook / disconnect here. NT8 calls OnWindowDestroyed
+            // for many window lifecycle transitions (Control Center close/reopen,
+            // workspace switches) and tearing down here would leave hotkeys dead
+            // until a full restart (the "not connecting anymore" bug). Only
+            // State == State.Terminated (real AddOn unload) stops everything.
+            Crumb("OnWindowDestroyed (ignored, staying alive)");
         }
 
         // ===================== Keyboard hook =====================

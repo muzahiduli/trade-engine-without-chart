@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trade Engine Command Center</title>
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <!-- Emergency Kill Switch Banner -->
@@ -52,9 +52,11 @@
   </header>
 
   <!-- Collapse/expand strip for the top bar (saves vertical space) -->
-  <div id="barCollapseStrip" style="display: flex; justify-content: flex-end; align-items: center; height: 20px; padding: 0 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;" title="Collapse / expand the top bar" onclick="toggleTopBar()">
-    <span style="font-size: 9px; color: var(--text-muted); margin-right: 6px;">TOP</span>
-    <span id="barChevron" style="font-size: 10px; color: var(--text-muted);">▲</span>
+  <div id="barCollapseStrip" style="display: flex; justify-content: flex-end; align-items: center; height: 20px; padding: 0 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); user-select: none;" title="Click strip: collapse/expand. ⟳ reloads. ✕ closes this window.">
+    <button style="background: none; border: none; color: var(--text-muted); font-size: 11px; cursor: pointer; padding: 0 5px;" title="Reload the panel (clears stale cache — fixes '??' boxes)" onclick="event.stopPropagation(); location.reload();">⟳</button>
+    <button style="background: none; border: none; color: var(--text-muted); font-size: 11px; cursor: pointer; padding: 0 5px;" title="Close this window" onclick="event.stopPropagation(); window.close();">✕</button>
+    <span style="font-size: 9px; color: var(--text-muted); margin-right: 6px; cursor: pointer;" onclick="event.stopPropagation(); toggleTopBar()">TOP</span>
+    <span id="barChevron" style="font-size: 10px; color: var(--text-muted); cursor: pointer;" onclick="event.stopPropagation(); toggleTopBar()">▲</span>
   </div>
 
   <!-- Main Container: Command Center (no charts — lines live on the NT8 chart) -->
@@ -473,7 +475,7 @@
     </table>
   </div>
 
-  <script type="module" src="app.js?v=117"></script>
+  <script type="module" src="app.js?v=118"></script>
   <script>
     function toggleHotkeysPanel() {
       const p = document.getElementById('hotkeysPanel');
