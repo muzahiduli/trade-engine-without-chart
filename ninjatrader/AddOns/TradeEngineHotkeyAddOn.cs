@@ -248,82 +248,99 @@ namespace NinjaTrader.NinjaScript.AddOns
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
-        // True when the foreground NT8 window has focus inside a text editor
-        // (Edit/RichEdit/TextBox). While typing into NT8 fields the hotkeys —
-        // especially the plain 'L' toggle — must pass through untouched.
-        private bool IsTypingInNinjaTrader()
+        // True when the foreground NT8 window has focus inside a text editor.
+// Two layers: WPF's own Keyboard.FocusedElement (catches TextBox/RichTextBox/
+// PasswordBox/ComboBox — the Win32 class-name check misses WPF-hosted
+// editors), falling back to the Win32 focused-window class (Edit/RichEdit).
+// While typing, ALL hotkeys pass through untouched.
+private bool IsTypingInNinjaTrader()
+{
+    try
+    {
+        if (!IsNinjaTraderFocused()) return false;
+        // WPF layer: the hook callback runs on NT8's UI thread (the hook is
+        // installed from OnWindowCreated), so reading Keyboard.FocusedElement
+        // is thread-safe here. If it throws (rare), fall through to Win32.
+        try
         {
-            try
-            {
-                if (!IsNinjaTraderFocused()) return false;
-                IntPtr fg = GetForegroundWindow();
-                uint tid;
-                GetWindowThreadProcessId(fg, out tid);
-                GUITHREADINFO gi = new GUITHREADINFO();
-                gi.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
-                if (!GetGUIThreadInfo(tid, ref gi) || gi.hwndFocus == IntPtr.Zero) return false;
-                var cls = new System.Text.StringBuilder(128);
-                GetClassName(gi.hwndFocus, cls, cls.Capacity);
-                string name = cls.ToString();
-                return name.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                       name.IndexOf("RichEdit", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                       name.IndexOf("TextBox", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-            catch
-            {
-                return false;
-            }
+            var fe = System.Windows.Input.Keyboard.FocusedElement;
+            if (fe is System.Windows.Controls.TextBox ||
+                fe is System.Windows.Controls.PasswordBox ||
+                fe is System.Windows.Controls.RichTextBox ||
+                fe is System.Windows.Controls.ComboBox)
+                return true;
         }
+        catch { }
+        // Win32 layer: WPF-companion Edit hosts / WinForms edit controls.
+        IntPtr fg = GetForegroundWindow();
+        uint tid;
+        GetWindowThreadProcessId(fg, out tid);
+        GUITHREADINFO gi = new GUITHREADINFO();
+        gi.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+        if (!GetGUIThreadInfo(tid, ref gi) || gi.hwndFocus == IntPtr.Zero) return false;
+        var cls = new System.Text.StringBuilder(128);
+        GetClassName(gi.hwndFocus, cls, cls.Capacity);
+        string name = cls.ToString();
+        return name.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               name.IndexOf("RichEdit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               name.IndexOf("TextBox", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+    catch
+    {
+        return false;
+    }
+}
 
-        private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
+private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
+{
+    if (nCode >= 0)
+    {
+        uint msg = (uint)wParam.ToInt64();
+        if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
         {
-            if (nCode >= 0)
+            KBDLLHOOKSTRUCT k = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+            bool ctrl = IsKeyDown(0x11);
+            bool shift = IsKeyDown(0x10);
+            bool alt = IsKeyDown(0x12);
+
+            // FOCUS GATE FIRST: never intercept keys unless NinjaTrader itself
+            // is the foreground app — otherwise we'd hijack Chrome/other apps
+            // and typed combos (or even plain 'L') would toggle trades.
+            if (!IsNinjaTraderFocused()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+
+            // TYPING GATE: while focus is inside an NT8 text field, pass every
+            // key through untouched (B/C/Q/R/L must type normally). The charm
+            // hotkeys are for chart focus, not for typing.
+            if (IsTypingInNinjaTrader()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+
+            // Toggle: plain L (no modifiers) flips forwarding on/off.
+            if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
             {
-                uint msg = (uint)wParam.ToInt64();
-                if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+                forwardingEnabled = !forwardingEnabled;
+                Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
+                SendStatus();
+                return new IntPtr(1); // swallow the toggle key
+            }
+
+            if (!forwardingEnabled) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+
+            foreach (var b in bindings.Values)
+            {
+                if (b.Key != (byte)k.vkCode) continue;
+                if (b.Ctrl != ctrl || b.Shift != shift || b.Alt != alt) continue;
+                if (!isWsConnected)
                 {
-                    KBDLLHOOKSTRUCT k = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
-                    bool ctrl = IsKeyDown(0x11);
-                    bool shift = IsKeyDown(0x10);
-                    bool alt = IsKeyDown(0x12);
-
-                    // Toggle: plain L (no modifiers) flips forwarding on/off — but ONLY when
-                    // NT8 is focused AND the focus isn't inside a text editor
-                    // (otherwise typing 'L' into an NT8 input would be swallowed).
-                    if (!ctrl && !shift && !alt && (byte)k.vkCode == VK_L)
-                    {
-                        if (IsTypingInNinjaTrader())
-                            return CallNextHookEx(hookHandle, nCode, wParam, lParam);
-                        forwardingEnabled = !forwardingEnabled;
-                        Crumb("TOGGLE L -> forwarding " + (forwardingEnabled ? "ON" : "OFF"));
-                        SendStatus();
-                        return new IntPtr(1); // swallow the toggle key
-                    }
-
-                    if (!forwardingEnabled) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
-
-                    // FOCUS GATE: never intercept keys unless NinjaTrader itself
-                    // is the foreground app — otherwise we'd hijack Chrome/other
-                    // apps and typed combos would execute trades.
-                    if (!IsNinjaTraderFocused()) return CallNextHookEx(hookHandle, nCode, wParam, lParam);
-
-                    foreach (var b in bindings.Values)
-                    {
-                        if (b.Key != (byte)k.vkCode) continue;
-                        if (b.Ctrl != ctrl || b.Shift != shift || b.Alt != alt) continue;
-                        if (!isWsConnected)
-                        {
-                            Crumb("KEY " + b.Action + " ignored: WS not connected");
-                            return CallNextHookEx(hookHandle, nCode, wParam, lParam);
-                        }
-                        Crumb("KEY forward " + b.Action);
-                        SendHotkeyAction(b.Action);
-                        return new IntPtr(1); // swallow the key
-                    }
+                    Crumb("KEY " + b.Action + " ignored: WS not connected");
+                    return CallNextHookEx(hookHandle, nCode, wParam, lParam);
                 }
+                Crumb("KEY forward " + b.Action);
+                SendHotkeyAction(b.Action);
+                return new IntPtr(1); // swallow the key
             }
-            return CallNextHookEx(hookHandle, nCode, wParam, lParam);
         }
+    }
+    return CallNextHookEx(hookHandle, nCode, wParam, lParam);
+}
 
         private void SendHotkeyAction(string action)
         {
