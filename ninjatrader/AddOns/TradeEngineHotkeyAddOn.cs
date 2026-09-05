@@ -455,18 +455,15 @@ private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
             {
                 try
                 {
-                    // Watchdog: if no frame arrives within 15s, the engine is
-                    // gone but the socket didn't error (abrupt kill). Dispose the
-                    // client so ConnectLoopAsync sees the break and reconnects.
-                    var recvTask = wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-                    var done = await Task.WhenAny(recvTask, Task.Delay(15000, ct)).ConfigureAwait(false);
-                    if (done != recvTask)
-                    {
-                        Crumb("WS watchdog: no traffic 15s, forcing reconnect");
-                        try { wsClient.Dispose(); } catch { }
-                        return;
-                    }
-                    WebSocketReceiveResult result = recvTask.Result;
+                    // No app-level watchdog: the WebSocket library itself detects
+                    // dead connections via ping/pong (the hub pings clients) and
+                    // ReceiveAsync throws/returns on a closed socket, which the
+                    // retry loop in ConnectLoopAsync handles. A 15s app-silence
+                    // watchdog was WRONG — the hub only broadcasts SYNC_STATE on
+                    // state changes, so a stable session is legitimately quiet for
+                    // minutes, and the watchdog was killing healthy connections
+                    // (the "badge stuck OFFLINE while hotkeys work" bug).
+                    WebSocketReceiveResult result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close) break;
                     // Inbound: sync our forwarding state from the hub's SINGLE
                     // SOURCE OF TRUTH (enableHotkeys in SYNC_STATE). The web
