@@ -264,14 +264,44 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
+            // NEVER touch WPF/ChartControl/Instrument here: OnBarUpdate runs on
+            // the data/bar thread, and any UI access throws "The calling thread
+            // cannot access this object because a different thread owns it" —
+            // which makes NT8 REMOVE the indicator (the "lines disappear" bug).
+            // Repaints happen in OnRender (per frame) and via the engine's
+            // SYNC_STATE -> ApplyEngineState -> Dispatcher.InvokeAsync path.
             if (State != State.Realtime) return;
             if (!hasEngineState && armedLine == 0)
             {
-                // Before the engine first reports state, follow the market so
-                // the lines stay visible/attached to streaming bars.
-                EnsureInitialPrices();
-                if (ChartControl != null) ChartControl.InvalidateVisual();
+                // Safe on the bar thread: adjust the raw price fields only.
+                // No ChartControl.InvalidateVisual() — the next render pass
+                // picks these up automatically.
+                double basePrice = GetCurrentPriceSafe();
+                if (basePrice > 0 && entryPrice <= 0)
+                {
+                    entryPrice = basePrice;
+                    if (stopPrice <= 0) stopPrice = basePrice - 10 * TickSize;
+                    if (targetPrice <= 0) targetPrice = basePrice + 20 * TickSize;
+                }
             }
+        }
+
+        // Thread-safe price read: Close[0] / MarketData.Last from this thread.
+        private double GetCurrentPriceSafe()
+        {
+            try
+            {
+                double c = Close[0];
+                if (!double.IsNaN(c) && c > 0) return c;
+            }
+            catch { }
+            try
+            {
+                MarketDataEventArgs mde = Instrument.MarketData.Last;
+                if (mde != null) return mde.Price;
+            }
+            catch { }
+            return 0;
         }
 
         // ------------------------------------------------------------------
@@ -811,8 +841,21 @@ namespace NinjaTrader.NinjaScript.Indicators
                 string type = GetField(root, "type", "");
                 string payload = GetField(root, "payload", "");
                 if (type == "SYNC_STATE" && payload.Length > 0)
-                    ApplyEngineState(payload);
-                // MARKET_DATA, HEARTBEAT etc. intentionally ignored.
+                {
+                    // MUST run on the chart's UI thread — ApplyEngineState touches
+                    // ChartControl/InvalidateVisual. Calling it from the WS receive
+                    // thread throws "calling thread cannot access this object" and
+                    // NT8 REMOVES the indicator (the lines-disappear bug).
+                    if (ChartControl != null && ChartControl.Dispatcher != null &&
+                        !ChartControl.Dispatcher.CheckAccess())
+                    {
+                        ChartControl.Dispatcher.Invoke((Action)(() => ApplyEngineState(payload)));
+                    }
+                    else
+                    {
+                        ApplyEngineState(payload);
+                    }
+                }
             }
             catch { }
         }
