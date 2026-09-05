@@ -89,6 +89,10 @@ func (h *Hub) HandleHotkey(action string) {
 		h.hotkeyFlatten()
 	case "STOP_AT_5M":
 		h.hotkeyStopAt5mCandle()
+	case "TOGGLE_RISK":
+		h.hotkeyToggleRiskCash()
+	case "LOCK_SL":
+		h.hotkeyToggleLockSl()
 	case "KILL_SWITCH":
 		h.emergencyKillSwitch()
 	default:
@@ -879,5 +883,54 @@ func (h *Hub) hotkeyStopAt5mCandle() {
 		Action:         "STOP_AT_5M",
 		Success:        true,
 		Details:        fmt.Sprintf("Entry=%.2f Stop=%.2f from 5m candle low/high", h.State.EntryPrice, stop),
+	})
+}
+
+// hotkeyToggleRiskCash — the Q hotkey: flip riskCash between the two web
+// preset defaults ($100 <-> $200), matching the web panel's pair.
+func (h *Hub) hotkeyToggleRiskCash() {
+	h.Mu.Lock()
+	cur := h.State.RiskCash
+	next := 200.0
+	if cur >= 150.0 {
+		next = 100.0
+	}
+	h.State.RiskCash = next
+	// Recalibrate the plan at the new risk (RecalculateState sizes the position).
+	if h.State.EntryPrice > 0 && h.State.StopPrice > 0 {
+		risk.RecalculateState(h.State)
+	}
+	h.Mu.Unlock()
+	go h.BroadcastState()
+	h.flashHotkeyStatus(fmt.Sprintf("Q: risk cash -> $%.0f", next))
+	go logging.RecordAudit(logging.AuditEvent{
+		EventType:      "HOTKEY",
+		AccountName:    h.State.AccountName,
+		InstrumentName: h.State.InstrumentName,
+		Action:         "TOGGLE_RISK",
+		Success:        true,
+		Details:        fmt.Sprintf("RiskCash=%v", next),
+	})
+}
+
+// hotkeyToggleLockSl — the L hotkey: flip the stop-loss lock on/off.
+func (h *Hub) hotkeyToggleLockSl() {
+	h.Mu.Lock()
+	h.State.IsSlLocked = !h.State.IsSlLocked
+	locked := h.State.IsSlLocked
+	h.Mu.Unlock()
+	go h.BroadcastState()
+	stateStr := "OFF"
+	if locked {
+		stateStr = "ON"
+	}
+	h.flashHotkeyStatus(fmt.Sprintf("L: lock SL %s", stateStr))
+	go logging.RecordAudit(logging.AuditEvent{
+		EventType:      "HOTKEY",
+		AccountName:    h.State.AccountName,
+		InstrumentName: h.State.InstrumentName,
+		Action:         "LOCK_SL",
+		Success:        true,
+		Details:        fmt.Sprintf("IsSlLocked=%v", locked),
 	})
 }
