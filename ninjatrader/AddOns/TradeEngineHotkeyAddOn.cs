@@ -355,6 +355,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             catch { }
             wsClient = null;
             isWsConnected = false;
+            Crumb("StopWebSocket: wsClient cleared");
         }
 
         private async Task ConnectLoopAsync(CancellationToken ct)
@@ -378,12 +379,19 @@ namespace NinjaTrader.NinjaScript.AddOns
                 catch (Exception ex)
                 {
                     if (!ct.IsCancellationRequested)
+                    {
+                        Crumb("WS connect error: " + ex.Message);
                         NinjaTrader.Code.Output.Process("TradeEngineHotkeyAddOn: connect error " + ex.Message, PrintTo.OutputTab1);
+                    }
                 }
                 isWsConnected = false;
                 wsClient = null;
+                Crumb("WS retry in 2s (connected=" + isWsConnected + ")");
                 if (!ct.IsCancellationRequested)
-                    await Task.Delay(2000, ct).ConfigureAwait(false);
+                {
+                    try { await Task.Delay(2000, ct).ConfigureAwait(false); }
+                    catch { break; }
+                }
             }
         }
 
@@ -411,7 +419,18 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 try
                 {
-                    WebSocketReceiveResult result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
+                    // Watchdog: if no frame arrives within 15s, the engine is
+                    // gone but the socket didn't error (abrupt kill). Dispose the
+                    // client so ConnectLoopAsync sees the break and reconnects.
+                    var recvTask = wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+                    var done = await Task.WhenAny(recvTask, Task.Delay(15000, ct)).ConfigureAwait(false);
+                    if (done != recvTask)
+                    {
+                        Crumb("WS watchdog: no traffic 15s, forcing reconnect");
+                        try { wsClient.Dispose(); } catch { }
+                        return;
+                    }
+                    WebSocketReceiveResult result = recvTask.Result;
                     if (result.MessageType == WebSocketMessageType.Close) break;
                     // We only SEND hotkeys; inbound is intentionally ignored.
                     if (result.EndOfMessage) sb.Clear();

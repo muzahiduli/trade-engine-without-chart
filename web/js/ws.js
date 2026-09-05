@@ -36,6 +36,12 @@ export function connectWS() {
       clearInterval(reconnectInterval);
       reconnectInterval = null;
     }
+    // Always request a fresh state snapshot on (re)connect — otherwise after
+    // an engine restart the UI keeps showing stale values (e.g. the hotkey
+    // badge stuck on OFFLINE) until the next broadcast happens to fire.
+    try {
+      sendWS('GET_STATE', {});
+    } catch (e) {}
     // Notify on-open listeners (subscribers do their own (re)subscribe).
     listeners.onOpen.forEach(fn => {
       try { fn(); } catch (e) { console.error('onOpen listener failed:', e); }
