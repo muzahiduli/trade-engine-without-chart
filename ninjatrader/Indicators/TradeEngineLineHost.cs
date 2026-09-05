@@ -60,9 +60,14 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool pollLoopStarted;
 
         // ---- Drawn lines (held references) ----
-        private NinjaTrader.NinjaScript.DrawingTools.Line entryLine;
-        private NinjaTrader.NinjaScript.DrawingTools.Line stopLine;
-        private NinjaTrader.NinjaScript.DrawingTools.Line targetLine;
+        // HorizontalLine spans the full chart width and is natively draggable
+        // vertically in NT8: the user's drag updates StartAnchor.Price, which
+        // the poll loop reads and pushes as UPDATE_PRICES. (Drawing these as
+        // bars-ago Line objects would anchor them far back in history -- the
+        // reason the lines were invisible on the live chart.)
+        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine entryLine;
+        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine stopLine;
+        private NinjaTrader.NinjaScript.DrawingTools.HorizontalLine targetLine;
 
         // ---- Engine state mirrored onto the lines ----
         private double currentEntry;
@@ -139,7 +144,6 @@ namespace NinjaTrader.NinjaScript.Indicators
         // ------------------------------------------------------------------
         private void EnsureLines(int barIndex)
         {
-            int idx = Math.Max(0, barIndex);
             double basePrice = GetCurrentPrice();
             if (basePrice <= 0) return;
 
@@ -158,11 +162,11 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
 
             if (entryLine == null)
-                entryLine = Draw.Line(this, "LineHost_Entry", idx, entry, idx, entry, Brushes.DodgerBlue);
+                entryLine = Draw.HorizontalLine(this, "LineHost_Entry", entry, Brushes.DodgerBlue);
             if (stopLine == null)
-                stopLine = Draw.Line(this, "LineHost_Stop", idx, stop, idx, stop, Brushes.Crimson);
+                stopLine = Draw.HorizontalLine(this, "LineHost_Stop", stop, Brushes.Crimson);
             if (targetLine == null)
-                targetLine = Draw.Line(this, "LineHost_Target", idx, target, idx, target, Brushes.LimeGreen);
+                targetLine = Draw.HorizontalLine(this, "LineHost_Target", target, Brushes.LimeGreen);
 
             if (!suppressDragPush)
             {
@@ -172,12 +176,11 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        private static void Reposition(NinjaTrader.NinjaScript.DrawingTools.Line ln, double price)
+        private static void Reposition(NinjaTrader.NinjaScript.DrawingTools.HorizontalLine ln, double price)
         {
             if (ln == null || ln.StartAnchor == null) return;
             if (Math.Abs(ln.StartAnchor.Price - price) < 0.0001) return;
             ln.StartAnchor.Price = price;
-            if (ln.EndAnchor != null) ln.EndAnchor.Price = price;
         }
 
         // ------------------------------------------------------------------
