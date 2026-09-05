@@ -82,6 +82,22 @@ namespace NinjaTrader.NinjaScript.Indicators
         private long lastSendUnix;
         private const int SendDebounceMs = 250;
 
+        // Diagnostic breadcrumb so chart-side behavior is verifiable without
+        // staring at the screen — same pattern as the AddOn.
+        private static string CrumbPath
+        {
+            get { return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TradeEngineLineHost.log"); }
+        }
+        private void Crumb(string text)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(CrumbPath,
+                    DateTime.Now.ToString("HH:mm:ss.fff") + "  " + text + Environment.NewLine);
+            }
+            catch { }
+        }
+
         // ---- Line prices (the three draggable levels) ----
         private double entryPrice;
         private double stopPrice;
@@ -502,9 +518,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             try
             {
+                Crumb("ApplyEngineState: payload len=" + (payload == null ? 0 : payload.Length));
                 var serializer = new JavaScriptSerializer();
                 Dictionary<string, object> root = serializer.Deserialize<Dictionary<string, object>>(payload);
-                if (root == null) return;
+                if (root == null) { Crumb("ApplyEngineState: parse null"); return; }
 
                 Dictionary<string, object> pos = root.ContainsKey("position") ? root["position"] as Dictionary<string, object> : null;
                 string mp = "Flat";
@@ -520,6 +537,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double entry = GetDoubleField(root, "entryPrice", 0);
                 double stop = GetDoubleField(root, "stopPrice", 0);
                 double target = GetDoubleField(root, "targetPrice", 0);
+                Crumb("ApplyEngineState: got entry=" + entry.ToString("F2") + " stop=" + stop.ToString("F2") + " target=" + target.ToString("F2"));
 
                 // Engine's computed position size (plan size while flat) — keeps
                 // the indicator's "N contracts" labels in sync with the engine.
@@ -578,6 +596,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                     engineInPosition = false;
                 }
 
+                Crumb("ApplyEngineState: applied -> entry=" + entryPrice.ToString("F2") + " stop=" + stopPrice.ToString("F2") + " target=" + targetPrice.ToString("F2") + " inPos=" + inPos + " armed=" + armedLine);
+
                 if (ChartControl != null) ChartControl.InvalidateVisual();
             }
             catch { }
@@ -596,6 +616,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // (UI thread) — never here, OnRender runs on the render thread and
                 // touching WPF UI from it breaks rendering (the "lines vanished" bug).
                 if (RenderTarget == null || chartControl == null || chartScale == null) return;
+                Crumb("OnRender: entry=" + entryPrice.ToString("F2") + " stop=" + stopPrice.ToString("F2") + " target=" + targetPrice.ToString("F2") + " rt=" + (RenderTarget != null));
 
                 double canvasLeft = chartControl.CanvasLeft;
                 double canvasRight = chartControl.CanvasRight;
