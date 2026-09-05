@@ -89,6 +89,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool hasEngineState;      // received SYNC_STATE at least once
         private bool engineInPosition;
         private int currentPositionSize = 1; // from SYNC_STATE position qty
+        private int planPositionSize = 1;     // from SYNC_STATE calculatedQty (engine sizing while flat)
 
         // ---- Line colors / rendering ----
         private System.Windows.Media.Brush entryWpfColor = Brushes.DodgerBlue;
@@ -105,9 +106,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool subscribedMouse;
         private bool chartEventsHooked;
         private ChartScale cachedScale;
-        private bool isDraggingEntry;
-        private bool isDraggingStop;
-        private bool isDraggingTarget;
+        // Armed-line model: clicking a line ARMS it for dragging; moving the
+        // mouse then moves it WITHOUT holding the button (RiskRewardTool style).
+        // Clicking again (anywhere) releases it.
+        private int armedLine; // 0=none, 1=entry, 2=stop, 3=target
         private bool isTargetDraggedIndependently; // target grabbed directly vs moved-with-entry
         private const double HitTestPixels = 30.0;
         private bool mouseCaptured;
@@ -263,7 +265,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         protected override void OnBarUpdate()
         {
             if (State != State.Realtime) return;
-            if (!hasEngineState && !isDraggingEntry && !isDraggingStop && !isDraggingTarget)
+            if (!hasEngineState && armedLine == 0)
             {
                 // Before the engine first reports state, follow the market so
                 // the lines stay visible/attached to streaming bars.
@@ -329,7 +331,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             panel.RemoveHandler(UIElement.MouseLeftButtonDownEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonDown));
             panel.RemoveHandler(UIElement.MouseLeftButtonUpEvent, new MouseButtonEventHandler(OnChartMouseLeftButtonUp));
             subscribedMouse = false;
-            isDraggingEntry = isDraggingStop = isDraggingTarget = false;
+            armedLine = 0;
         }
 
         private void OnChartMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -345,34 +347,46 @@ namespace NinjaTrader.NinjaScript.Indicators
             double dStop = Math.Abs(p.Y - stopY);
             double dTarget = Math.Abs(p.Y - targetY);
 
-            if (dEntry < HitTestPixels)
+            int clickedLine = 0;
+            if (dEntry < HitTestPixels) clickedLine = 1;
+            else if (dStop < HitTestPixels) clickedLine = 2;
+            else if (dTarget < HitTestPixels) clickedLine = 3;
+
+            if (clickedLine > 0)
             {
-                isDraggingEntry = true;
+                // Click-to-arm: if a line is already armed, clicking it again
+                // (or clicking another line) releases the old one and arms the
+                // new one. A second click on the SAME line while armed releases.
+                if (armedLine == clickedLine)
+                {
+                    armedLine = 0; // release — line is now placed
+                    if (mouseCaptured) ReleaseMouseCaptureSafe(sender);
+                    e.Handled = true;
+                    PushPrices(); // final authoritative push on release
+                    return;
+                }
+                armedLine = clickedLine;
+                isTargetDraggedIndependently = (clickedLine == 3);
+                e.Handled = true;
+                // Keep mouse capture so the arm survives even while the mouse
+                // leaves the panel momentarily (RiskRewardTool behavior).
+                ((IInputElement)sender).CaptureMouse();
+                mouseCaptured = true;
+            }
+            else if (armedLine > 0)
+            {
+                // Clicked on empty chart space: release the armed line.
+                armedLine = 0;
                 isTargetDraggedIndependently = false;
+                if (mouseCaptured) ReleaseMouseCaptureSafe(sender);
                 e.Handled = true;
-                ((IInputElement)sender).CaptureMouse();
-                mouseCaptured = true;
-            }
-            else if (dStop < HitTestPixels)
-            {
-                isDraggingStop = true;
-                e.Handled = true;
-                ((IInputElement)sender).CaptureMouse();
-                mouseCaptured = true;
-            }
-            else if (dTarget < HitTestPixels)
-            {
-                isDraggingTarget = true;
-                isTargetDraggedIndependently = true;
-                e.Handled = true;
-                ((IInputElement)sender).CaptureMouse();
-                mouseCaptured = true;
+                PushPrices();
             }
         }
 
         private void OnChartMouseMove(object sender, MouseEventArgs e)
         {
-            if (!isDraggingEntry && !isDraggingStop && !isDraggingTarget) return;
+            if (armedLine == 0) return;
             if (cachedScale == null || ChartControl == null) return;
 
             System.Windows.Point p = e.GetPosition((IInputElement)sender);
@@ -380,7 +394,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             newPrice = RoundToTickSize(newPrice);
             if (newPrice <= 0) return;
 
-            if (isDraggingEntry)
+            if (armedLine == 1)
             {
                 // Moving the entry line shifts the target by the SAME amount
                 // (entry->target gap is preserved — the plan stays parallel).
@@ -391,8 +405,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                     targetPrice = RoundToTickSize(targetPrice + delta);
                 }
             }
-            else if (isDraggingStop) stopPrice = newPrice;
-            else if (isDraggingTarget) targetPrice = newPrice;
+            else if (armedLine == 2) stopPrice = newPrice;
+            else if (armedLine == 3) targetPrice = newPrice;
 
             ChartControl.InvalidateVisual();
             PushPricesIfDebounced();
@@ -401,20 +415,30 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void OnChartMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            bool wasDragging = isDraggingEntry || isDraggingStop || isDraggingTarget;
-            isDraggingEntry = false;
-            isDraggingStop = false;
-            isDraggingTarget = false;
-            isTargetDraggedIndependently = false;
-            if (mouseCaptured) ((IInputElement)sender).ReleaseMouseCapture();
+            bool wasDragging = armedLine > 0;
+            // Do NOT release the arm on button-up: the line stays armed until
+            // clicked again (RiskRewardTool click-to-drag). We just drop the
+            // capture so clicks elsewhere are received; armedLine persists.
+            if (mouseCaptured) ReleaseMouseCaptureSafe(sender);
             mouseCaptured = false;
             if (wasDragging)
             {
-                // Final authoritative push on release.
+                // Final authoritative push on the "click-release" gesture end.
+                // (The line is still armed, so a subsequent click will release.)
                 PushPrices();
                 if (ChartControl != null) ChartControl.InvalidateVisual();
             }
             e.Handled = true;
+        }
+
+        private void ReleaseMouseCaptureSafe(object sender)
+        {
+            try
+            {
+                IInputElement el = sender as IInputElement;
+                if (el != null) el.ReleaseMouseCapture();
+            }
+            catch { }
         }
 
         // ------------------------------------------------------------------
@@ -467,8 +491,17 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double stop = GetDoubleField(root, "stopPrice", 0);
                 double target = GetDoubleField(root, "targetPrice", 0);
 
+                // Engine's computed position size (plan size while flat) — keeps
+                // the indicator's "N contracts" labels in sync with the engine.
+                if (root.ContainsKey("calculatedQty") && root["calculatedQty"] != null)
+                {
+                    int cq;
+                    if (int.TryParse(root["calculatedQty"].ToString(), out cq) && cq > 0)
+                        planPositionSize = cq;
+                }
+
                 bool inPos = !string.Equals(mp, "Flat", StringComparison.OrdinalIgnoreCase);
-                if (isDraggingEntry || isDraggingStop || isDraggingTarget) return; // user is moving a line
+                if (armedLine != 0) return; // user is moving a line
 
                 if (inPos && entry > 0)
                 {
@@ -573,6 +606,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int PositionQty()
         {
             if (engineInPosition) return currentPositionSize;
+            // Flat but engine has computed a plan size — mirror it so the
+            // indicator labels match the engine's actual sizing/risk numbers.
+            if (planPositionSize > 0) return planPositionSize;
             return 1;
         }
 
