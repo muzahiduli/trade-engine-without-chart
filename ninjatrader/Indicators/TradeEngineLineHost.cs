@@ -531,32 +531,48 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 bool inPos = !string.Equals(mp, "Flat", StringComparison.OrdinalIgnoreCase);
-                if (armedLine != 0) return; // user is moving a line
+                // Engine state is ALWAYS applied so the lines stay in sync with
+                // the engine (e.g. after the R hotkey sets entry/stop from the 5m
+                // candle). The old `if (armedLine != 0) return;` ignored ALL
+                // updates while any line was armed — with click-to-arm a line
+                // stays armed until clicked again, so lines froze and desynced
+                // from the engine. User-drag protection now only guards the
+                // single line whose drag is in flight (mouse captured); the rest
+                // of the plan still syncs.
+                bool draggingEntry = (armedLine == 1 && mouseCaptured);
+                bool draggingStop = (armedLine == 2 && mouseCaptured);
+                bool draggingTarget = (armedLine == 3 && mouseCaptured);
 
                 if (inPos && entry > 0)
                 {
                     engineInPosition = true;
                     currentPositionSize = posQty > 0 ? posQty : 1;
-                    entryPrice = entry;
-                    stopPrice = stop > 0 ? stop : entry - 10 * TickSize;
-                    targetPrice = target > 0 ? target : entry + 20 * TickSize;
+                    if (!draggingEntry && entry > 0) entryPrice = entry;
+                    if (!draggingStop && stop > 0) stopPrice = stop;
+                    else if (!draggingStop && stop <= 0) stopPrice = entry - 10 * TickSize;
+                    if (!draggingTarget && target > 0) targetPrice = target;
+                    else if (!draggingTarget && target <= 0) targetPrice = entry + 20 * TickSize;
                     hasEngineState = true;
                 }
                 else if (!inPos)
                 {
-                    // Flat: keep the user's plan levels if present, otherwise
-                    // seed near market. hasEngineState stays true once seen so
-                    // bars don't yank plan lines around.
+                    // Flat: apply the engine plan levels. hasEngineState stays
+                    // true once seen so bars don't yank plan lines around.
                     if (!hasEngineState)
                     {
                         double basePrice = GetCurrentPrice();
-                        if (basePrice > 0) { entryPrice = entry > 0 ? entry : basePrice; stopPrice = stop > 0 ? stop : basePrice - 10 * TickSize; targetPrice = target > 0 ? target : basePrice + 20 * TickSize; }
+                        if (basePrice > 0)
+                        {
+                            if (!draggingEntry && entry > 0) entryPrice = entry; else if (entryPrice <= 0) entryPrice = basePrice;
+                            if (!draggingStop && stop > 0) stopPrice = stop; else if (stopPrice <= 0) stopPrice = basePrice - 10 * TickSize;
+                            if (!draggingTarget && target > 0) targetPrice = target; else if (targetPrice <= 0) targetPrice = basePrice + 20 * TickSize;
+                        }
                     }
                     else
                     {
-                        if (entry > 0) entryPrice = entry;
-                        if (stop > 0) stopPrice = stop;
-                        if (target > 0) targetPrice = target;
+                        if (!draggingEntry && entry > 0) entryPrice = entry;
+                        if (!draggingStop && stop > 0) stopPrice = stop;
+                        if (!draggingTarget && target > 0) targetPrice = target;
                     }
                     hasEngineState = true;
                     engineInPosition = false;
